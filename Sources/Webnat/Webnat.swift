@@ -16,8 +16,10 @@ import WebKit
 /// ## 使用示例
 ///
 /// ```swift
-/// // 1. 初始化 WebView 配置
-/// Webnat.initialize(webViewConfiguration: webView.configuration)
+/// // 1. 初始化 WebView 配置（须在创建 WKWebView 之前）
+/// let config = WKWebViewConfiguration()
+/// Webnat.initialize(webViewConfiguration: config)
+/// let webView = WKWebView(frame: .zero, configuration: config)
 ///
 /// // 2. 获取 Webnat 实例
 /// let webnat = Webnat.of(webView)
@@ -285,8 +287,13 @@ public class Webnat: NSObject {
         param: Sendable? = nil,
         connection: Connection? = nil,
     ) {
-        let connection = connection ?? connections.values.first
-        broadcastWebnat.broadcast(name: name, param: param, connection: connection)
+        if let connection {
+            broadcastWebnat.broadcast(name: name, param: param, connection: connection)
+        } else {
+            for connection in Array(connections.values) {
+                broadcastWebnat.broadcast(name: name, param: param, connection: connection)
+            }
+        }
     }
     
     /// 注册方法处理器
@@ -365,8 +372,8 @@ public class Webnat: NSObject {
     /// - Parameters:
     ///   - method: 要调用的方法名称
     ///   - param: 方法参数，可以是任意可序列化的对象，可选
-    ///   - timeout: 超时时间（秒），默认值为 `.greatestFiniteMagnitude`（永不超时）
-    ///     超时后会自动取消调用并返回超时错误
+    ///   - timeout: 超时时间（秒），默认值为 `.greatestFiniteMagnitude`（表示永不超时，不会注册定时器）
+    ///     有限且大于 `0` 时，超时后会自动取消调用并返回超时错误
     ///   - onNotification: 收到通知时的回调函数，用于接收方法执行过程中的进度或状态更新
     ///     - param: 通知内容，可以是进度信息、中间结果等
     ///   - callback: 完成回调，接收方法执行结果或错误
@@ -404,8 +411,9 @@ public class Webnat: NSObject {
         connection: Connection? = nil,
     ) -> MethodCancellation {
         let connection = connection ?? connections.values.first
+        let effectiveTimeout = Self.normalizedRPCTimeout(timeout)
         javaScriptAliveKeeper.increaseReference()
-        return methodWebnat.method( method, param: param, timeout: timeout,onNotification: onNotification, callback: { [weak self] in
+        return methodWebnat.method( method, param: param, timeout: effectiveTimeout,onNotification: onNotification, callback: { [weak self] in
             callback?($0, $1)
             self?.javaScriptAliveKeeper.decreaseReference()
         }, connection: connection)
@@ -418,8 +426,8 @@ public class Webnat: NSObject {
     /// - Parameters:
     ///   - method: 要调用的方法名称
     ///   - param: 方法参数，可以是任意可序列化的对象，可选
-    ///   - timeout: 超时时间（秒），如果为 `nil` 则使用默认值（永不超时）
-    ///     超时后会自动取消调用并抛出超时错误
+    ///   - timeout: 超时时间（秒）；`nil` 表示永不超时。
+    ///     大于 `0` 时超时后会自动取消调用并抛出超时错误；`0` 与 `nil` 一样不启用超时定时器
     ///   - onNotification: 收到通知时的回调函数，用于接收方法执行过程中的进度或状态更新
     ///     - param: 通知内容，可以是进度信息、中间结果等
     ///   - connection: 目标连接，如果为 `nil` 则选择第一个可用连接
@@ -459,7 +467,14 @@ public class Webnat: NSObject {
         defer {
             javaScriptAliveKeeper.decreaseReference()
         }
-        return try await methodWebnat.method(method, param: param, timeout: timeout, onNotification: onNotification, connection: connection)
+        let resolvedConnection = connection ?? connections.values.first
+        return try await methodWebnat.method(
+            method,
+            param: param,
+            timeout: timeout,
+            onNotification: onNotification,
+            connection: resolvedConnection
+        )
     }
 
     /// 处理来自 Web 端的脚本消息
@@ -468,10 +483,8 @@ public class Webnat: NSObject {
     /// 此方法会被 `ScriptMessageHandler` 调用，负责解析消息并分发到相应的处理器。
     ///
     /// **重要说明**：
-    /// - JavaScript 端传递对象，但 `WKScriptMessage.body` 可能是字典或 JSON 字符串
-    /// - 某些情况下 WKWebView 会自动将对象转换为字典
-    /// - 某些情况下 WKWebView 会将对象序列化为 JSON 字符串
-    /// - 因此需要同时处理两种情况：字典直接使用，字符串需要解析 JSON
+    /// - 本实现只处理 `WKScriptMessage.body` 为 `[String: Any]`（字典）的情况，与 `postMessage` 传入对象时 WebKit 的常见行为一致
+    /// - 其他类型（如字符串、数字）会被忽略
     ///
     /// **支持的消息类型**：
     /// - `open`: 连接建立消息，创建新的 `Connection` 实例
@@ -485,13 +498,12 @@ public class Webnat: NSObject {
     ///
     /// - Parameters:
     ///   - userContentController: 消息控制器
-    ///   - message: 来自 Web 端的消息对象，`body` 已自动转换为字典类型
+    ///   - message: 来自 Web 端的消息对象；仅当 `body` 可 cast 为 `[String: Any]` 时才会继续处理
     ///
     /// - Note: 此方法是内部方法，不应直接调用
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         javaScriptAliveKeeper.delay()
         
-        // WKScriptMessage.body 可能是字典或字符串，需要处理两种情况
         guard let json = message.body as? [String: Any] else {
             return
         }
@@ -530,21 +542,13 @@ public class Webnat: NSObject {
                 }
                 
                 do {
-                    // messageToSend 已经是 Message 对象的字典格式，直接序列化为 JSON
+                    // 将单条消息包成 JSON 数组字面量，供 `receive(...)` 展开为参数
                     let data = try JSONSerialization.data(withJSONObject: [messageToSend.toDictionary()])
-                    guard var string = String(data: data, encoding: .utf8) else {
+                    guard let string = String(data: data, encoding: .utf8) else {
                         completion?(NSError.serializationFailed(messageToSend))
                         return
                     }
-                    
-//                    // 转义特殊字符，确保可以安全地嵌入到 JavaScript 单引号字符串中
-//                    string = string.replacingOccurrences(of: "\\", with: "\\\\")
-//                    string = string.replacingOccurrences(of: "\'", with: "\\\'")
-//                    string = string.replacingOccurrences(of: "\n", with: "\\n")
-//                    string = string.replacingOccurrences(of: "\r", with: "\\r")
-//                    string = string.replacingOccurrences(of: "\u{2028}", with: "\\u2028")
-//                    string = string.replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-//                    
+
                     // 重置保活
                     self.javaScriptAliveKeeper.delay()
 
@@ -562,7 +566,6 @@ public class Webnat: NSObject {
                     completion?(e)
                 }
             }
-            connections[from] = connection
             onConnectionOpen(connection: connection)
             return
         }
@@ -586,7 +589,7 @@ public class Webnat: NSObject {
     
     /// 连接打开时的回调
     ///
-    /// 当收到 Web 端的 "open" 消息时调用，将新连接添加到连接字典并通知所有子处理器。
+    /// 当收到 Web 端的 "open" 消息时调用：**仅此处置入** `connections`，并通知各子模块。
     ///
     /// - Parameter connection: 新打开的连接
     ///
@@ -600,13 +603,12 @@ public class Webnat: NSObject {
   
     /// 连接关闭时的回调
     ///
-    /// 当收到 Web 端的 "close" 消息时调用，从连接字典中移除连接并通知所有子处理器。
+    /// 当收到 Web 端的 "close" 消息时调用：连接已从 `connections` 中移除（见 `userContentController`），此处只通知子模块。
     ///
     /// - Parameter connection: 已关闭的连接
     ///
     /// - Note: 此方法是内部方法，不应直接调用
     private func onConnectionClose(connection: Connection) {
-        connections.removeValue(forKey: connection.id)
         rawWebnat.onConnectionClose(connection: connection)
         broadcastWebnat.onConnectionClose(connection: connection)
         methodWebnat.onConnectionClose(connection: connection)
@@ -625,6 +627,13 @@ public class Webnat: NSObject {
         rawWebnat.onConnectionReceive(connection: connection, message: message)
         broadcastWebnat.onConnectionReceive(connection: connection, message: message)
         methodWebnat.onConnectionReceive(connection: connection, message: message)
+    }
+
+    /// 将回调版 `method` 的 `TimeInterval` 超时转为 `MethodWebnat` 所用的可选秒数：永不超时、非正数、非有限值均视为 `nil`（不注册定时器）。
+    private static func normalizedRPCTimeout(_ timeout: TimeInterval) -> TimeInterval? {
+        if timeout <= 0 || !timeout.isFinite { return nil }
+        if timeout == .greatestFiniteMagnitude { return nil }
+        return timeout
     }
 }
 

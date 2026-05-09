@@ -1,42 +1,72 @@
 # Webnat
 
 [![Swift](https://img.shields.io/badge/Swift-5.5-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/Platform-iOS%2012%2B%20%7C%20macOS%2010.14%2B-lightgrey.svg)](https://developer.apple.com)
+[![Platform](https://img.shields.io/badge/Platform-iOS%2012%2B%20%7C%20macOS%2011%2B-lightgrey.svg)](https://developer.apple.com)
 [![SPM](https://img.shields.io/badge/SPM-Compatible-brightgreen.svg)](https://swift.org/package-manager)
+[![CocoaPods](https://img.shields.io/badge/CocoaPods-Git%20podspec-ff69b4.svg)](https://guides.cocoapods.org/syntax/podfile.html#pod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Release](https://img.shields.io/github/v/release/auhgnayuo/webnat-darwin?label=release)](https://github.com/auhgnayuo/webnat-darwin/releases)
 
-Webnat 是一个用于 Native (iOS/macOS) 与 Web 之间通信的 Swift 库。支持多种通信模式，基于 WebKit 的 `WKWebView` 和 `WKScriptMessageHandler`。
+[English](./README.md)
+
+Webnat 是用于 iOS / macOS 上 `WKWebView` 与 Native 通信的 Swift 库，基于 `WKScriptMessageHandler`。
+
+**需要 Web 端实现：**页面中请使用 [webnat-web](https://github.com/auhgnayuo/webnat-web)（或兼容协议的前端）。本仓库只提供 Native 侧能力。
+
+## 环境要求
+
+| | 版本 |
+|--|--|
+| Swift | 5.5+ |
+| iOS | 12.0+ |
+| macOS | 11.0+ |
+| Xcode | 建议 14+（便于 Swift 6 工具链） |
+
+**线程：** `Webnat` 及相关 API 以主线程为主（`@MainActor`）。请在主线程调用 `initialize`、`of`、监听与发送，或与 WebView 生命周期一致的队列上调用。
+
+**并发：** `async`/`await` 调用、`AsyncStream` 广播监听等需要 **iOS 13+**（及对应 macOS API 版本）。更低系统请使用带 `callback` 的 `method` 重载。
 
 ## 特性
 
-- **多平台支持** - 支持 iOS 12+ 和 macOS 10.14+
-- **iframe 支持** - 自动处理主框架和 iframe 之间的消息转发
-- **三种通信模式** - 支持双向的原始消息、广播消息和方法调用（RPC）
-- **超时和取消** - 内置超时控制和主动取消机制
-- **类型安全** - 完全支持 Swift 6 严格并发检查
+- **多平台** — iOS 12+、macOS 11+
+- **iframe** — 主框架与 iframe 间消息转发
+- **三种模式** — 原始消息、广播、类 RPC 方法调用
+- **超时与取消** — 内置超时与协作式取消
+- **并发** — 适配宿主工程中的 Swift 6 语言模式
+
+## 示例工程
+
+用 Xcode 打开 [`Example/Example.xcodeproj`](Example/Example.xcodeproj)，运行 **Example** 目标。请加载已集成 **webnat-web** 的页面，否则没有对端建立连接。
 
 ## 安装
 
-### Swift Package Manager
+版本请绑定本仓库上存在的 [Git tag](https://github.com/auhgnayuo/webnat-darwin/releases)。发版时 tag 应与 `Sources/Webnat/Version.swift`、`Webnat.podspec` 中的版本一致。
 
-在你的 `Package.swift` 文件中添加：
+### Swift Package Manager
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-os.git", from: "1.0.2")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.0.3")
 ]
 ```
 
-或在 Xcode 中：
+在 Xcode 中：**File → Add Package Dependencies…** → 填入 `https://github.com/auhgnayuo/webnat-darwin.git` → 添加 **Webnat** 产品。
 
-1. File → Add Package Dependencies...
-2. 输入仓库地址：`https://github.com/auhgnayuo/webnat-os.git`
-3. 选择版本规则
-4. 点击 Add Package
+### CocoaPods（Git 引用，无需 Trunk）
+
+```ruby
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.0.3'
+```
+
+跟分支：
+
+```ruby
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :branch => 'main'
+```
+
+然后执行 `pod install`。使用 `:tag` 时请与 `Webnat.podspec` 的 `s.version` 对齐。维护者发版与校验见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ## 相关项目
-
-Webnat 需要配合 Web 端实现使用，同时也支持其他 Native 平台：
 
 | 平台 | 仓库 |
 |------|------|
@@ -60,17 +90,12 @@ let webnat = Webnat.of(webView)
 
 ### 2. 等待 Web 端建立连接
 
-连接是由 **Web 端（JavaScript）主动发起**的，Native 端会自动接收和管理连接。
+连接由 **JavaScript 主动发起**，Native 通过 `webnat.connections` 访问。
 
 ```swift
-// Web 端（JavaScript）会发送 "open" 消息来建立连接
-// Native 端自动创建 Connection 实例并存储在 webnat.connections 中
-
-// 访问所有活跃连接
 let connections = webnat.connections
 print("当前有 \(connections.count) 个连接")
 
-// 通过 ID 获取特定连接
 if let connection = connections["connection-id"] {
     print("找到连接:", connection.id)
     print("连接属性:", connection.attributes ?? [:])
@@ -80,25 +105,23 @@ if let connection = connections["connection-id"] {
 ### 3. 发送和接收消息
 
 ```swift
-// 发送原始消息
+// 原始消息
 webnat.raw("Hello from Native!", connection: connection)
 
-// 监听原始消息
 let rawListener: RawBlockListener = { raw, connection in
     print("From \(connection.id):", raw)
 }
 webnat.onRaw(listener: rawListener)
 
-// 广播消息
+// 广播
 webnat.broadcast(name: "userLoggedIn", param: ["userId": 123], connection: connection)
 
-// 监听广播消息
 let broadcastListener: BroadcastBlockListener = { param, connection in
     print("Broadcast from \(connection.id):", param ?? "nil")
 }
 webnat.onBroadcast(name: "userLoggedIn", listener: broadcastListener)
 
-// 流式监听广播消息（iOS 13+）
+// 流式监听广播（iOS 13+）
 if #available(iOS 13.0, *) {
     Task {
         for await (param, connection) in webnat.listenBroadcast(name: "userLoggedIn") {
@@ -107,7 +130,7 @@ if #available(iOS 13.0, *) {
     }
 }
 
-// 调用 Web 端方法
+// 调用 Web 端方法（回调；兼容所支持的 iOS 版本）
 webnat.method(
     "getUserInfo",
     param: ["userId": 123],
@@ -121,7 +144,7 @@ webnat.method(
     }
 }
 
-// 异步方式调用 Web 端方法（iOS 13+）
+// async/await（iOS 13+）
 if #available(iOS 13.0, *) {
     Task {
         do {
@@ -142,21 +165,27 @@ if #available(iOS 13.0, *) {
 let methodListener: MethodBlockListener = { param, callback, notify, connection in
     let userId = param?["userId"] as? Int ?? 0
 
-    // 可以发送途中的通知（如进度更新）
     notify(["progress": 50])
 
-    // 模拟异步操作
     DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
         callback(["userId": userId, "name": "User"], nil)
     }
 
     return {
-        // 取消操作的逻辑
+        // 取消时的清理
     }
 }
 webnat.onMethod(name: "getUserInfo", listener: methodListener)
 ```
 
+## 隐私清单
+
+库内包含 [`Sources/Webnat/PrivacyInfo.xcprivacy`](Sources/Webnat/PrivacyInfo.xcprivacy)。通过 SPM 或 CocoaPods 集成时，资源会随产物进入应用；请按 Apple 对隐私清单的要求随包提交。
+
+## 参与贡献
+
+见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+
 ## 协议
 
-本项目采用 MIT 协议开源。
+[MIT](LICENSE)

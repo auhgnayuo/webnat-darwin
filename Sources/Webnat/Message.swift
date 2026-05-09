@@ -145,8 +145,10 @@ public struct Abort {
 /// - `reply`: 方法调用响应消息
 /// - `notify`: 通知消息
 /// - `abort`: 中止消息
+///
+/// **并发**：实例仅在 MainActor 上创建与使用。内部 `SendMessage` 将 `Message` 作为 `@Sendable` 闭包参数类型，故标注 `@unchecked Sendable` 以满足 Swift 6 并发检查；**不表示**可跨隔离域随意传递，仍须随 `Webnat` / `Connection` 在主线程使用。
 @MainActor
-public class Message {
+public class Message: @unchecked Sendable {
     /// Native 端的 UUID 标识符常量
     ///
     /// 用于标识消息来自 Native 端，值为 `"00000000-0000-0000-0000-000000000000"`。
@@ -399,6 +401,63 @@ public class Message {
         
         return dict
     }
+
+    /// `JSONSerialization` 等产生的 `Any?` 转为 `Sendable?`（`Sendable` 为 marker protocol，不能对 `Any` 做条件转换）
+    private static func sendable(fromJSON value: Any?) -> Sendable? {
+        guard let value else { return nil }
+        if value is NSNull { return nil }
+        return sendable(fromJSONObject: value)
+    }
+
+    private static func sendable(fromJSONObject value: Any) -> Sendable? {
+        switch value {
+        case let string as String:
+            return string
+        case let string as NSString:
+            return string as String
+        case let bool as Bool:
+            return bool
+        case let int as Int:
+            return int
+        case let int64 as Int64:
+            return int64
+        case let uint as UInt:
+            return uint
+        case let double as Double:
+            return double
+        case let float as Float:
+            return float
+        case let number as NSNumber:
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return number.boolValue
+            }
+            return number.doubleValue
+        case let dict as [String: Any]:
+            var out: [String: Sendable] = [:]
+            out.reserveCapacity(dict.count)
+            for (key, child) in dict {
+                guard let childSendable = sendable(fromJSON: child as Any?) else { return nil }
+                out[key] = childSendable
+            }
+            return out
+        case let array as [Any]:
+            var out: [Sendable] = []
+            out.reserveCapacity(array.count)
+            for child in array {
+                guard let childSendable = sendable(fromJSON: child) else { return nil }
+                out.append(childSendable)
+            }
+            return out
+        case let dict as NSDictionary:
+            guard let swiftDict = dict as? [String: Any] else { return nil }
+            return sendable(fromJSONObject: swiftDict)
+        case let array as NSArray:
+            guard let swiftArray = array as? [Any] else { return nil }
+            return sendable(fromJSONObject: swiftArray)
+        default:
+            return nil
+        }
+    }
     
     /// 从字典创建消息实例
     ///
@@ -417,42 +476,46 @@ public class Message {
         
         var open: Open?
         if let openDict = dict["open"] as? [String: Any] {
-            open = Open(param: openDict["param"])
+            open = Open(param: sendable(fromJSON: openDict["param"]))
         }
         
         var close: Close?
         if let closeDict = dict["close"] as? [String: Any] {
-            close = Close(param: closeDict["param"])
+            close = Close(param: sendable(fromJSON: closeDict["param"]))
         }
         
         var raw: Raw?
         if let rawDict = dict["raw"] as? [String: Any] {
-            raw = Raw(param: rawDict["param"])
+            raw = Raw(param: sendable(fromJSON: rawDict["param"]))
         }
         
         var broadcast: Broadcast?
         if let broadcastDict = dict["broadcast"] as? [String: Any],
            let name = broadcastDict["name"] as? String {
-            broadcast = Broadcast(name: name, param: broadcastDict["param"])
+            broadcast = Broadcast(name: name, param: sendable(fromJSON: broadcastDict["param"]))
         }
         
         var invoke: Invoke?
         if let invokeDict = dict["invoke"] as? [String: Any],
            let id = invokeDict["id"] as? String,
            let method = invokeDict["method"] as? String {
-            invoke = Invoke(id: id, method: method, param: invokeDict["param"])
+            invoke = Invoke(id: id, method: method, param: sendable(fromJSON: invokeDict["param"]))
         }
         
         var reply: Reply?
         if let replyDict = dict["reply"] as? [String: Any],
            let id = replyDict["id"] as? String {
-            reply = Reply(id: id, result: replyDict["result"], error: replyDict["error"])
+            reply = Reply(
+                id: id,
+                result: sendable(fromJSON: replyDict["result"]),
+                error: sendable(fromJSON: replyDict["error"])
+            )
         }
         
         var notify: Notify?
         if let notifyDict = dict["notify"] as? [String: Any],
            let id = notifyDict["id"] as? String {
-            notify = Notify(id: id, param: notifyDict["param"])
+            notify = Notify(id: id, param: sendable(fromJSON: notifyDict["param"]))
         }
         
         var abort: Abort?

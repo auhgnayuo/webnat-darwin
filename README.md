@@ -1,44 +1,72 @@
 # Webnat
 
 [![Swift](https://img.shields.io/badge/Swift-5.5-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/Platform-iOS%2012%2B%20%7C%20macOS%2010.14%2B-lightgrey.svg)](https://developer.apple.com)
+[![Platform](https://img.shields.io/badge/Platform-iOS%2012%2B%20%7C%20macOS%2011%2B-lightgrey.svg)](https://developer.apple.com)
 [![SPM](https://img.shields.io/badge/SPM-Compatible-brightgreen.svg)](https://swift.org/package-manager)
+[![CocoaPods](https://img.shields.io/badge/CocoaPods-Git%20podspec-ff69b4.svg)](https://guides.cocoapods.org/syntax/podfile.html#pod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Release](https://img.shields.io/github/v/release/auhgnayuo/webnat-darwin?label=release)](https://github.com/auhgnayuo/webnat-darwin/releases)
 
 [中文文档](./README_CN.md)
 
-A lightweight WebView-Native bridge library for iOS and macOS. Supports multiple communication modes based on WebKit's `WKWebView` and `WKScriptMessageHandler`.
+A lightweight WebView–Native bridge for iOS and macOS, built on WebKit’s `WKWebView` and `WKScriptMessageHandler`.
+
+**You need a Web implementation:** use [webnat-web](https://github.com/auhgnayuo/webnat-web) (or a compatible client) in the page loaded by the web view. This repo is the Native side only.
+
+## Requirements
+
+| | Version |
+|--|--|
+| Swift | 5.5+ |
+| iOS | 12.0+ |
+| macOS | 11.0+ |
+| Xcode | 14+ recommended (Swift 6–friendly toolchains) |
+
+**Threading:** `Webnat` and related APIs are main-thread oriented (`@MainActor`). Call `initialize`, `of`, listeners, and sends from the main thread unless your app’s architecture already guarantees the same execution context as the web view.
+
+**Concurrency:** `async`/`await` method calls, `AsyncStream` broadcast listening, and related APIs require **iOS 13+** (and the equivalent macOS version for those APIs). On older iOS versions, use the callback-based `method` overload.
 
 ## Features
 
-- **Multi-platform Support** - iOS 12+ and macOS 10.14+
-- **iframe Support** - Automatic message forwarding between main frame and iframes
-- **Three Communication Modes** - Bidirectional raw messages, broadcast messages, and method calls (RPC)
-- **Timeout & Cancellation** - Built-in timeout control and active cancellation mechanism
-- **Type Safety** - Full support for Swift 6 strict concurrency checking
+- **Multi-platform** — iOS 12+ and macOS 11+
+- **iframe support** — message forwarding between the main frame and iframes
+- **Three modes** — raw messages, broadcast, and RPC-style methods
+- **Timeout and cancellation** — built-in timeout and cooperative cancel
+- **Concurrency** — ready for Swift 6 language mode in dependent projects
+
+## Example app
+
+Open [`Example/Example.xcodeproj`](Example/Example.xcodeproj) in Xcode. Run the **Example** target and load a page that uses **webnat-web** so connections and messages have a peer to talk to.
 
 ## Installation
 
-### Swift Package Manager
+Pin versions to a [Git tag](https://github.com/auhgnayuo/webnat-darwin/releases) that exists on this repo. Release tags should match `Sources/Webnat/Version.swift` and `Webnat.podspec`.
 
-Add to your `Package.swift`:
+### Swift Package Manager
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-os.git", from: "1.0.2")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.0.3")
 ]
 ```
 
-Or in Xcode:
+In Xcode: **File → Add Package Dependencies…** → enter `https://github.com/auhgnayuo/webnat-darwin.git` → add the **Webnat** product.
 
-1. File → Add Package Dependencies...
-2. Enter URL: `https://github.com/auhgnayuo/webnat-os.git`
-3. Choose version rule
-4. Click Add Package
+### CocoaPods (Git, no trunk)
 
-## Related Projects
+```ruby
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.0.3'
+```
 
-Webnat requires a Web-side implementation and also supports other Native platforms:
+Track a branch:
+
+```ruby
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :branch => 'main'
+```
+
+Then `pod install`. For `:tag`, keep the tag aligned with `s.version` in `Webnat.podspec`. Maintainer checklist (lint, tagging): [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+## Related projects
 
 | Platform | Repository |
 |----------|------------|
@@ -60,9 +88,9 @@ let webView = WKWebView(frame: .zero, configuration: configuration)
 let webnat = Webnat.of(webView)
 ```
 
-### 2. Wait for Web-side Connection
+### 2. Wait for a Web-side connection
 
-Connections are initiated by the **Web side (JavaScript)**. The Native side automatically receives and manages connections.
+Connections are started from **JavaScript**. Native code reads `webnat.connections`.
 
 ```swift
 let connections = webnat.connections
@@ -74,13 +102,12 @@ if let connection = connections["connection-id"] {
 }
 ```
 
-### 3. Send and Receive Messages
+### 3. Send and receive messages
 
 ```swift
-// Send raw message
+// Raw
 webnat.raw("Hello from Native!", connection: connection)
 
-// Listen for raw messages
 let rawListener: RawBlockListener = { raw, connection in
     print("From \(connection.id):", raw)
 }
@@ -89,7 +116,6 @@ webnat.onRaw(listener: rawListener)
 // Broadcast
 webnat.broadcast(name: "userLoggedIn", param: ["userId": 123], connection: connection)
 
-// Listen for broadcasts
 let broadcastListener: BroadcastBlockListener = { param, connection in
     print("Broadcast from \(connection.id):", param ?? "nil")
 }
@@ -104,7 +130,21 @@ if #available(iOS 13.0, *) {
     }
 }
 
-// Call Web-side method (async, iOS 13+)
+// Call a Web-side method (callback; works on all supported iOS versions)
+webnat.method(
+    "getUserInfo",
+    param: ["userId": 123],
+    timeout: 5.0,
+    connection: connection
+) { result, error in
+    if let error = error {
+        print("Error:", error)
+    } else {
+        print("User info:", result ?? "nil")
+    }
+}
+
+// Same call with async/await (iOS 13+)
 if #available(iOS 13.0, *) {
     Task {
         do {
@@ -121,7 +161,7 @@ if #available(iOS 13.0, *) {
     }
 }
 
-// Register method for Web to call
+// Register a method for the Web to invoke
 let methodListener: MethodBlockListener = { param, callback, notify, connection in
     let userId = param?["userId"] as? Int ?? 0
 
@@ -138,6 +178,14 @@ let methodListener: MethodBlockListener = { param, callback, notify, connection 
 webnat.onMethod(name: "getUserInfo", listener: methodListener)
 ```
 
+## Privacy
+
+The package ships [`Sources/Webnat/PrivacyInfo.xcprivacy`](Sources/Webnat/PrivacyInfo.xcprivacy) as a resource. When you integrate via SPM or CocoaPods, include it in the app bundle as required by Apple’s privacy manifest rules.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
 ## License
 
-This project is licensed under the MIT License.
+[MIT](LICENSE)

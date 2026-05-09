@@ -26,7 +26,7 @@ public typealias RawBlockListener = @MainActor @Sendable @convention(block) ( _ 
 /// - 自定义消息格式的场景
 ///
 /// **消息格式**：
-/// - 使用 `Message` 协议，包含 `raw` 字段
+/// - 使用 `Message` 类型，包含 `raw` 字段
 /// - Message 格式：`{ from: string, to: string, raw: { param?: Sendable } }`
 ///
 /// **特点**：
@@ -36,7 +36,7 @@ public typealias RawBlockListener = @MainActor @Sendable @convention(block) ( _ 
 ///
 /// - Note: 这是内部类，不应直接使用，应通过 `Webnat` 类的 API 访问
 @MainActor
-class RawWebnat {
+final class RawWebnat {
 
     /// 注册的监听器列表
     ///
@@ -84,7 +84,7 @@ class RawWebnat {
     
     /// 连接打开时的回调
     ///
-    /// 将新连接添加到连接列表中，后续可向其发送消息。
+    /// 连接表由 `Webnat` 维护；此处为生命周期钩子，当前无额外逻辑。
     ///
     /// - Parameter connection: 新打开的连接对象（Connection 实例）
     func onConnectionOpen(connection: Connection) {
@@ -93,7 +93,7 @@ class RawWebnat {
     
     /// 连接关闭时的回调
     ///
-    /// 从连接列表中移除已关闭的连接，避免后续继续向其发送消息。
+    /// 连接表由 `Webnat` 维护；此处为生命周期钩子，当前无额外逻辑。
     ///
     /// - Parameter connection: 已关闭的连接对象（Connection 实例）
     func onConnectionClose(connection: Connection) {

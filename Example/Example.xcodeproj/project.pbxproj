@@ -218,7 +218,7 @@
 			mainGroup = E593B3FD2EC7332B002F2FF4;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				E5285AE02F52E8D800D5C226 /* XCLocalSwiftPackageReference "../../webnat-os" */,
+				E5285AE02F52E8D800D5C226 /* XCLocalSwiftPackageReference "../../webnat-darwin" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E593B4072EC7332B002F2FF4 /* Products */;
@@ -591,9 +591,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		E5285AE02F52E8D800D5C226 /* XCLocalSwiftPackageReference "../../webnat-os" */ = {
+		E5285AE02F52E8D800D5C226 /* XCLocalSwiftPackageReference "../../webnat-darwin" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../../webnat-os";
+			relativePath = "../../webnat-darwin";
 		};
 /* End XCLocalSwiftPackageReference section */
 

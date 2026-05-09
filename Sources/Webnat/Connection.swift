@@ -38,6 +38,8 @@ typealias SendMessage = @MainActor @Sendable (_ message: Message, _ completion: 
 /// - iframe 连接：对应 Web 页面中的 iframe
 ///
 /// 每个 WKWebView 可以有多个连接（主框架 + 多个 iframe）
+///
+/// **并发**：实例仅在 MainActor 上创建与使用。公开监听器类型（如 `RawBlockListener`）带有 `@Sendable`，形参中的 `Connection` 必须满足 `Sendable` 约束，编译器才能通过；此处使用 `@unchecked Sendable` 是配合该类型系统的折中，**不表示**可以安全地传到任意并发域——仍须只在主线程、随 `Webnat` API 使用。
 
 @MainActor
 public class Connection: NSObject, @unchecked Sendable {

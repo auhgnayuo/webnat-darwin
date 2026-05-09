@@ -61,14 +61,14 @@ public typealias MethodBlockListener = @MainActor @Sendable @convention(block) (
 /// - 自动错误传递
 /// - 每个调用有唯一 ID，支持并发多个调用
 ///
-/// 消息格式：使用 Message 协议，包含 invoke、reply、notify、abort 字段
+/// 消息格式：使用 `Message` 类型，包含 invoke、reply、notify、abort 等字段
 /// - 调用请求：`{ from: string, to: string, invoke: { id: string, method: string, param?: Sendable } }`
 /// - 调用结果：`{ from: string, to: string, reply: { id: string, result?: Sendable, error?: Sendable } }`
 /// - 调用通知：`{ from: string, to: string, notify: { id: string, param?: Sendable } }`
 /// - 取消请求：`{ from: string, to: string, abort: { id: string } }`
 
 @MainActor
-class MethodWebnat {
+final class MethodWebnat {
     
     /// 方法监听器映射表
     /// key: 方法名称（String）
@@ -137,7 +137,7 @@ class MethodWebnat {
     /// - Parameters:
     ///   - method: 要调用的方法名称
     ///   - param: 方法参数，可以是任意可序列化的对象，可选
-    ///   - timeout: 超时时间（秒），如果为 `nil` 则永不超时。超时后会自动取消调用并返回超时错误
+    ///   - timeout: 超时时间（秒）；`nil` 或 `<= 0` 时不注册超时定时器。`> 0` 时超时后会自动取消调用并返回超时错误
     ///   - onNotification: 接收到途中的通知时回调，用于接收方法执行过程中的进度或状态更新
     ///     - param: 通知内容，可以是进度信息、中间结果等
     ///   - callback: 完成回调，接收方法执行结果或错误
@@ -161,10 +161,9 @@ class MethodWebnat {
         // 生成唯一调用 ID
         let id = UUID().uuidString
         
-        /// 用于取消超时定时的 closure。返回值为 closure，调用可终止定时器。
+        /// 注册超时任务（若需要），并返回用于 `cancel()` 的闭包。
         let cancelTimeout = {
-            // 设置超时定时器
-            if let timeout, timeout > 0 {
+            if let timeout, timeout > 0, timeout.isFinite {
                 let item = DispatchWorkItem { [weak self] in
                     guard let self else {
                         return
@@ -278,10 +277,10 @@ class MethodWebnat {
     /// - Parameters:
     ///   - method: 要调用的方法名称
     ///   - param: 方法参数，可以是任意可序列化的对象，可选
-    ///   - timeout: 超时时间（秒），如果为 `nil` 则永不超时。超时后会自动取消调用并抛出超时错误
+    ///   - timeout: 超时时间（秒）；`nil` 或 `<= 0` 时不注册超时。`> 0` 时超时后会自动取消调用并抛出超时错误
     ///   - onNotification: 用于监听途中的通知回调，用于接收方法执行过程中的进度或状态更新
     ///     - param: 通知内容，可以是进度信息、中间结果等
-    ///   - connection: 目标连接，如果为 `nil` 则选择第一个可用连接
+    ///   - connection: 目标连接；`nil` 时立即失败（`closed`）。由 `Webnat.method` 异步入口负责解析默认连接。
     /// - Returns: 方法执行结果，可以是任意可序列化的对象，可选
     /// - Throws: 方法执行错误，包括：
     ///   - 超时错误（`WebnatErrorCode.timeout`）
@@ -330,7 +329,7 @@ class MethodWebnat {
     
     /// 连接打开时的回调
     ///
-    /// 将新连接添加到连接列表中，后续可向其发送方法调用请求。
+    /// 连接表由 `Webnat` 维护；此处为生命周期钩子，当前无额外逻辑。
     ///
     /// - Parameter connection: 新打开的连接对象（Connection 实例）
     func onConnectionOpen(connection: Connection) {
@@ -339,7 +338,7 @@ class MethodWebnat {
     
     /// 连接关闭时的回调
     ///
-    /// 触发该连接上所有待完成调用的清理回调（返回连接关闭错误），并从连接列表中移除。
+    /// 触发该连接上所有**本模块发起的、尚未完成**的 RPC 清理逻辑（如向调用方补发关闭错误）；不负责从 `Webnat.connections` 中移除。
     ///
     /// - Parameter connection: 已关闭的连接对象（Connection 实例）
     func onConnectionClose(connection: Connection) {

@@ -28,16 +28,16 @@ public typealias BroadcastBlockListener = @MainActor @Sendable @convention(block
 /// **特点**：
 /// - 按事件名称分类管理监听器
 /// - 支持多个订阅者同时监听同一事件
-/// - 可以向指定连接或所有连接广播
+/// - 可以向指定连接广播（多连接由 `Webnat.broadcast` 侧循环派发）
 /// - 广播时不关心是否有订阅者的存在
 ///
 /// **消息格式**：
-/// - 使用 `Message` 协议，包含 `broadcast` 字段
+/// - 使用 `Message` 类型，包含 `broadcast` 字段
 /// - Message 格式：`{ from: string, to: string, broadcast: { name: string, param?: Sendable } }`
 ///
 /// - Note: 这是内部类，不应直接使用，应通过 `Webnat` 类的 API 访问
 @MainActor
-class BroadcastWebnat {
+final class BroadcastWebnat {
     
     /// 广播事件监听器映射表
     ///
@@ -123,16 +123,13 @@ class BroadcastWebnat {
     
     /// 广播消息推送
     ///
-    /// 将消息广播给指定连接或所有连接。
-    /// 若 `connection` 为 `nil`，则向所有当前活跃连接广播。
-    /// 使用 `Message` 类构造消息并发送。
+    /// 向**单个**连接发送一条广播消息。未指定连接时的「全体广播」由 `Webnat` 遍历 `connections` 并多次调用本方法完成。
     ///
     /// - Parameters:
     ///   - name: 广播事件名称，用于标识事件类型
     ///   - param: 广播参数，可以是任意可序列化的对象，可选。若无参数，则消息不携带 `param` 字段
-    ///   - connection: 目标连接（单个），若为 `nil` 则广播到所有连接
+    ///   - connection: 目标连接；为 `nil` 时不发送（调用方应保证传入有效连接）
     func broadcast(name: String, param: Sendable? = nil, connection: Connection? = nil) {
-        // 定义广播操作——使用 Message 类构造消息后通过 Connection.send 发送
         guard let connection else {
             return
         }
@@ -143,7 +140,7 @@ class BroadcastWebnat {
         
     /// 连接打开（建立）时的回调
     ///
-    /// 会将新连接添加到内部活跃连接列表，后续可向其广播。
+    /// 连接表由 `Webnat` 维护；此处为生命周期钩子，当前无额外逻辑。
     ///
     /// - Parameters:
     ///   - connection: 新打开的连接对象（Connection 实例）
@@ -152,7 +149,7 @@ class BroadcastWebnat {
     
     /// 连接关闭时的回调
     ///
-    /// 会将已关闭的连接对象从活跃连接列表中移除，避免后续继续广播到其上。
+    /// 连接表由 `Webnat` 维护；此处为生命周期钩子，当前无额外逻辑。
     ///
     /// - Parameters:
     ///   - connection: 已关闭的连接对象（Connection 实例）
