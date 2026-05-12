@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import WebKit
 @testable import Webnat
 
 // MARK: - Message serialization
@@ -312,6 +313,170 @@ final class MethodWebnatTests: XCTestCase {
         )
         wait(for: [exp], timeout: 0.25)
     }
+
+    func testRegisterMethodReplacesPrevious() {
+        let rpc = MethodWebnat()
+        var first = 0
+        var second = 0
+        rpc.on(name: "x") { _, callback, _, _ in
+            first += 1
+            callback(1, nil)
+            return {}
+        }
+        rpc.on(name: "x") { _, callback, _, _ in
+            second += 1
+            callback(2, nil)
+            return {}
+        }
+        var last: Message?
+        var conn: Connection!
+        conn = makePeerConnection { last = $0 }
+        rpc.onConnectionReceive(connection: conn, message: Message(from: conn.id, to: Message.NATIVE_UUID, invoke: Invoke(id: "i", method: "x", param: nil)))
+        XCTAssertEqual(first, 0, "前一个 listener 应已被覆盖，不应再被调用")
+        XCTAssertEqual(second, 1)
+        XCTAssertEqual(last?.reply?.result as? Int, 2)
+    }
+
+    func testOffMethodMakesNextInvokeUnimplemented() {
+        let rpc = MethodWebnat()
+        let listener: MethodBlockListener = { _, callback, _, _ in
+            callback("nope", nil)
+            return {}
+        }
+        rpc.on(name: "y", listener: listener)
+        rpc.off(name: "y", listener: listener)
+        var last: Message?
+        var conn: Connection!
+        conn = makePeerConnection { last = $0 }
+        rpc.onConnectionReceive(connection: conn, message: Message(from: conn.id, to: Message.NATIVE_UUID, invoke: Invoke(id: "i", method: "y", param: nil)))
+        XCTAssertNotNil(last?.reply?.error)
+    }
+
+    func testWebSideAbortInvokesNativeHandlerCancellation() {
+        let rpc = MethodWebnat()
+        let conn = makePeerConnection { _ in }
+        var cancelled = false
+        rpc.on(name: "long") { _, _, _, _ in
+            return { cancelled = true }
+        }
+        rpc.onConnectionReceive(connection: conn, message: Message(from: conn.id, to: Message.NATIVE_UUID, invoke: Invoke(id: "rid", method: "long", param: nil)))
+        rpc.onConnectionReceive(connection: conn, message: Message(from: conn.id, to: Message.NATIVE_UUID, abort: Abort(id: "rid")))
+        XCTAssertTrue(cancelled)
+    }
+
+    func testConnectionCloseDuringPendingRPCDeliversClosedError() {
+        let rpc = MethodWebnat()
+        let conn = makePeerConnection { _ in /* 不回复 */ }
+        let exp = expectation(description: "closed")
+        _ = rpc.method(
+            "x",
+            param: nil,
+            timeout: nil,
+            onNotification: nil,
+            callback: { _, error in
+                XCTAssertEqual((error as NSError?)?.code, WebnatErrorCode.closed)
+                exp.fulfill()
+            },
+            connection: conn
+        )
+        rpc.onConnectionClose(connection: conn)
+        wait(for: [exp], timeout: 1)
+    }
+
+    func testSendErrorFromConnectionForwardsToCallback() {
+        let rpc = MethodWebnat()
+        let conn = Connection(id: "c", attributes: nil, url: nil) { _, completion in
+            completion?(NSError(domain: "X", code: 42, userInfo: nil))
+        }
+        let exp = expectation(description: "send err")
+        _ = rpc.method(
+            "x",
+            param: nil,
+            timeout: nil,
+            onNotification: nil,
+            callback: { _, error in
+                XCTAssertEqual((error as NSError?)?.code, 42)
+                exp.fulfill()
+            },
+            connection: conn
+        )
+        wait(for: [exp], timeout: 1)
+    }
+
+    func testNotifyAfterCompletionIsDropped() {
+        let rpc = MethodWebnat()
+        var outgoing: [Message] = []
+        var conn: Connection!
+        conn = makePeerConnection { outgoing.append($0) }
+        rpc.on(name: "n") { _, callback, notify, _ in
+            callback(1, nil)
+            notify("late")
+            return {}
+        }
+        rpc.onConnectionReceive(connection: conn, message: Message(from: conn.id, to: Message.NATIVE_UUID, invoke: Invoke(id: "ii", method: "n", param: nil)))
+        let notifies = outgoing.compactMap(\.notify)
+        XCTAssertEqual(notifies.count, 0, "已完成后再次 notify 不应外发消息")
+    }
+
+    @available(iOS 13.0, macOS 10.15, *)
+    func testAsyncOverloadSuccess() async throws {
+        let rpc = MethodWebnat()
+        var conn: Connection!
+        conn = makePeerConnection { outgoing in
+            guard let inv = outgoing.invoke else { return }
+            Task { @MainActor in
+                rpc.onConnectionReceive(connection: conn, message: Message(from: conn.id, to: Message.NATIVE_UUID, reply: Reply(id: inv.id, result: 7)))
+            }
+        }
+        let result = try await rpc.method("x", connection: conn)
+        XCTAssertEqual(result as? Int, 7)
+    }
+
+    @available(iOS 13.0, macOS 10.15, *)
+    func testAsyncOverloadThrowsOnReplyError() async {
+        let rpc = MethodWebnat()
+        var conn: Connection!
+        conn = makePeerConnection { outgoing in
+            guard let inv = outgoing.invoke else { return }
+            Task { @MainActor in
+                rpc.onConnectionReceive(connection: conn, message: Message(from: conn.id, to: Message.NATIVE_UUID, reply: Reply(id: inv.id, error: NSError.unimplemented("x").toJson())))
+            }
+        }
+        do {
+            _ = try await rpc.method("x", connection: conn)
+            XCTFail("应抛出错误")
+        } catch let e as NSError {
+            XCTAssertEqual(e.code, WebnatErrorCode.unimplemented)
+        }
+    }
+
+    @available(iOS 13.0, macOS 10.15, *)
+    func testAsyncOverloadCancelledViaTaskCancel() async {
+        let rpc = MethodWebnat()
+        let conn = makePeerConnection { _ in /* 不回复 */ }
+        let task = Task { @MainActor () -> Sendable? in
+            do {
+                return try await rpc.method("hang", connection: conn)
+            } catch {
+                XCTAssertEqual((error as NSError).code, WebnatErrorCode.cancelled)
+                return nil as Sendable?
+            }
+        }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        task.cancel()
+        _ = await task.value
+    }
+
+    @available(iOS 13.0, macOS 10.15, *)
+    func testAsyncOverloadNilConnectionThrowsClosed() async {
+        let rpc = MethodWebnat()
+        do {
+            _ = try await rpc.method("x", connection: nil)
+            XCTFail("应抛错")
+        } catch let e as NSError {
+            XCTAssertEqual(e.code, WebnatErrorCode.closed)
+        }
+    }
 }
 
 // MARK: - Message edge cases
@@ -364,6 +529,30 @@ final class ConnectionTests: XCTestCase {
         }
         wait(for: [exp], timeout: 1)
     }
+
+    func testSendForwardsCompletionFromUnderlying() {
+        let exp = expectation(description: "sent")
+        let conn = Connection(id: "c", attributes: nil, url: nil) { _, completion in
+            completion?(nil)
+        }
+        conn.send(Message.raw(to: "c", param: nil)) { error in
+            XCTAssertNil(error)
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 1)
+    }
+
+    func testSendForwardsErrorFromUnderlying() {
+        let exp = expectation(description: "err")
+        let conn = Connection(id: "c", attributes: nil, url: nil) { _, completion in
+            completion?(NSError(domain: "X", code: 9, userInfo: nil))
+        }
+        conn.send(Message.raw(to: "c", param: nil)) { error in
+            XCTAssertEqual((error as NSError?)?.code, 9)
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 1)
+    }
 }
 
 // MARK: - RawWebnat
@@ -397,6 +586,30 @@ final class RawWebnatTests: XCTestCase {
         raw.on(listener: l)
         raw.off(listener: l)
         raw.onConnectionReceive(connection: conn, message: Message(from: "c1", to: Message.NATIVE_UUID, raw: Raw(param: nil)))
+        XCTAssertEqual(count, 0)
+    }
+
+    func testDuplicateOnSameListenerDedupes() {
+        let raw = RawWebnat()
+        let conn = Connection(id: "c1", attributes: nil, url: nil) { _, completion in
+            completion?(nil)
+        }
+        var count = 0
+        let l: RawBlockListener = { _, _ in count += 1 }
+        raw.on(listener: l)
+        raw.on(listener: l)
+        raw.onConnectionReceive(connection: conn, message: Message(from: "c1", to: Message.NATIVE_UUID, raw: Raw(param: nil)))
+        XCTAssertEqual(count, 1, "同一引用重复 on 应只保留一条")
+    }
+
+    func testIgnoresNonRawMessage() {
+        let raw = RawWebnat()
+        let conn = Connection(id: "c1", attributes: nil, url: nil) { _, completion in
+            completion?(nil)
+        }
+        var count = 0
+        raw.on(listener: { _, _ in count += 1 })
+        raw.onConnectionReceive(connection: conn, message: Message(from: "c1", to: Message.NATIVE_UUID, broadcast: Broadcast(name: "x", param: nil)))
         XCTAssertEqual(count, 0)
     }
 }
@@ -489,6 +702,32 @@ final class BroadcastWebnatTests: XCTestCase {
             "取消后 AsyncStream 与 onConnectionReceive 存在竞态时，当前实现至多再投递一次；若业务要求严格 0 次，需要再收紧实现或单独约定。"
         )
     }
+
+    func testIgnoresNonBroadcastMessage() {
+        let b = BroadcastWebnat()
+        let conn = makeConn()
+        var count = 0
+        b.on(name: "e", listener: { _, _ in count += 1 })
+        b.onConnectionReceive(connection: conn, message: Message(from: conn.id, to: Message.NATIVE_UUID, raw: Raw(param: nil)))
+        XCTAssertEqual(count, 0)
+    }
+
+    @available(iOS 13.0, macOS 10.15, *)
+    func testTwoListenStreamsBothReceive() async {
+        let b = BroadcastWebnat()
+        let conn = makeConn()
+        let s1 = b.listen(name: "fan")
+        let s2 = b.listen(name: "fan")
+        var it1 = s1.makeAsyncIterator()
+        var it2 = s2.makeAsyncIterator()
+        Task { @MainActor in
+            b.onConnectionReceive(connection: conn, message: self.broadcastMessage(conn: conn, name: "fan", param: 7))
+        }
+        let v1 = await it1.next()
+        let v2 = await it2.next()
+        XCTAssertEqual(v1?.0 as? Int, 7)
+        XCTAssertEqual(v2?.0 as? Int, 7)
+    }
 }
 
 // MARK: - JavaScriptAliveKeeper
@@ -515,5 +754,252 @@ final class JavaScriptAliveKeeperTests: XCTestCase {
         let keeper = JavaScriptAliveKeeper(timerInterval: 0.1) {}
         keeper.heartbeatInterval = 2.5
         XCTAssertEqual(keeper.heartbeatInterval, 2.5, accuracy: 0.0001)
+    }
+
+    func testZeroReferencesNoHeartbeat() {
+        var beats = 0
+        let keeper = JavaScriptAliveKeeper(timerInterval: 0.05) { beats += 1 }
+        keeper.heartbeatInterval = 0.1
+        let exp = expectation(description: "no beat")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            XCTAssertEqual(beats, 0)
+            // 防御 keeper 在 deinit 前继续触发
+            _ = keeper
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 1)
+    }
+
+    func testDecreaseStopsHeartbeats() {
+        var beats = 0
+        let keeper = JavaScriptAliveKeeper(timerInterval: 0.05) { beats += 1 }
+        keeper.heartbeatInterval = 0.1
+        keeper.increaseReference()
+        let exp = expectation(description: "stopped")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            let baseline = beats
+            keeper.decreaseReference()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                XCTAssertEqual(beats, baseline, "decrement 后心跳应停止")
+                exp.fulfill()
+            }
+        }
+        wait(for: [exp], timeout: 2)
+    }
+
+    func testDelayPostponesNextHeartbeat() {
+        var beats = 0
+        let keeper = JavaScriptAliveKeeper(timerInterval: 0.05) { beats += 1 }
+        keeper.heartbeatInterval = 0.2
+        keeper.increaseReference()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            keeper.delay()
+        }
+        let exp = expectation(description: "delayed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            XCTAssertEqual(beats, 0, "delay 后下次心跳应推到 0.1+0.2=0.3 之后")
+            keeper.decreaseReference()
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 1.5)
+    }
+}
+
+// MARK: - Error
+
+@MainActor
+final class ErrorTests: XCTestCase {
+    func testFromNSErrorReturnsSameInstance() {
+        let original = NSError(domain: "X", code: 7, userInfo: nil)
+        XCTAssertTrue(NSError.from(original) === original)
+    }
+
+    func testFromDictWithCodeAndMessage() {
+        let dict: [String: Any] = ["code": -42, "message": "boom"]
+        let e = NSError.from(dict)
+        XCTAssertEqual(e.domain, WebnatErrorDomain)
+        XCTAssertEqual(e.code, -42)
+        XCTAssertEqual(e.localizedDescription, "boom")
+    }
+
+    func testFromDictWithVariantFieldNames() {
+        let dict: [String: Any] = ["errCode": "777", "errMsg": "x"]
+        let e = NSError.from(dict)
+        XCTAssertEqual(e.code, 777)
+        XCTAssertEqual(e.localizedDescription, "x")
+    }
+
+    func testFromNonDictUsesUnknown() {
+        let e = NSError.from("oops" as Any)
+        XCTAssertEqual(e.code, WebnatErrorCode.unknown)
+        XCTAssertTrue(e.localizedDescription.contains("oops"))
+    }
+
+    func testFactoryConstructorsHaveExpectedCodes() {
+        XCTAssertEqual(NSError.timeout().code, WebnatErrorCode.timeout)
+        XCTAssertEqual(NSError.closed().code, WebnatErrorCode.closed)
+        XCTAssertEqual(NSError.cancelled().code, WebnatErrorCode.cancelled)
+        XCTAssertEqual(NSError.unimplemented("m").code, WebnatErrorCode.unimplemented)
+        XCTAssertEqual(NSError.serializationFailed("x").code, WebnatErrorCode.serializationFailed)
+        XCTAssertEqual(NSError.deserializationFailed("x").code, WebnatErrorCode.deserializationFailed)
+        XCTAssertEqual(NSError.unknown("x").code, WebnatErrorCode.unknown)
+    }
+
+    func testToJsonRoundTrip() {
+        let json = NSError.timeout().toJson()
+        let back = NSError.from(json as Any)
+        XCTAssertEqual(back.code, WebnatErrorCode.timeout)
+    }
+}
+
+// MARK: - Message decode (NSNull placeholder + skip semantics)
+
+@MainActor
+final class MessageDecodeTests: XCTestCase {
+    func testDecodePrimitiveAndNestedTypes() {
+        let original = Message.invoke(to: "p", id: "i", method: "m", param: ["s": "x", "n": 1, "b": true, "arr": [1, 2.5, "z"]])
+        let parsed = Message.from(dict: original.toDictionary())
+        let p = parsed?.invoke?.param as? [String: Sendable]
+        XCTAssertEqual(p?["s"] as? String, "x")
+        XCTAssertEqual(p?["n"] as? Int, 1)
+        XCTAssertEqual(p?["b"] as? Bool, true)
+        let arr = p?["arr"] as? [Sendable]
+        XCTAssertEqual(arr?.count, 3)
+    }
+
+    func testDecodeNSNullAtTopLevelKeptAsPlaceholder() {
+        let dict: [String: Any] = [
+            "magic": Message.MAGIC,
+            "from": "x",
+            "to": "y",
+            "broadcast": ["name": "e", "param": NSNull()],
+        ]
+        let m = Message.from(dict: dict)
+        XCTAssertNotNil(m?.broadcast)
+        XCTAssertTrue(m?.broadcast?.param is NSNull, "NSNull 应作为 Sendable 占位保留")
+    }
+
+    func testDecodeArrayContainingNSNullKeepsItAsPlaceholder() {
+        let dict: [String: Any] = [
+            "magic": Message.MAGIC,
+            "from": "x",
+            "to": "y",
+            "broadcast": ["name": "e", "param": [1, NSNull(), "z"]],
+        ]
+        let m = Message.from(dict: dict)
+        let arr = m?.broadcast?.param as? [Sendable]
+        XCTAssertEqual(arr?.count, 3)
+        XCTAssertTrue(arr?[1] is NSNull)
+    }
+
+    func testDecodeArraySkipsUnknownTypeButKeepsValid() {
+        // Date 不是 JSON 类型，应在数组中被跳过（与 NSNull 的「保留占位」行为不同）
+        let dict: [String: Any] = [
+            "magic": Message.MAGIC,
+            "from": "x",
+            "to": "y",
+            "broadcast": ["name": "e", "param": [1, Date(), "z"]],
+        ]
+        let m = Message.from(dict: dict)
+        let arr = m?.broadcast?.param as? [Sendable]
+        XCTAssertEqual(arr?.count, 2, "未识别类型应跳过，而不是让整个数组失败")
+        XCTAssertEqual(arr?[0] as? Int, 1)
+        XCTAssertEqual(arr?[1] as? String, "z")
+    }
+
+    func testDecodeDictSkipsUnknownTypeButKeepsValid() {
+        let dict: [String: Any] = [
+            "magic": Message.MAGIC,
+            "from": "x",
+            "to": "y",
+            "broadcast": ["name": "e", "param": ["k1": 1, "k2": Date(), "k3": "z"]],
+        ]
+        let m = Message.from(dict: dict)
+        let p = m?.broadcast?.param as? [String: Sendable]
+        XCTAssertEqual(p?.count, 2)
+        XCTAssertEqual(p?["k1"] as? Int, 1)
+        XCTAssertEqual(p?["k3"] as? String, "z")
+    }
+
+    func testDecodeInvokeWithoutMethodIsDropped() {
+        let dict: [String: Any] = [
+            "magic": Message.MAGIC,
+            "from": "x",
+            "to": "y",
+            "invoke": ["id": "i"],
+        ]
+        let m = Message.from(dict: dict)
+        XCTAssertNotNil(m)
+        XCTAssertNil(m?.invoke, "缺少 method 时整个 invoke payload 应被丢弃")
+    }
+
+    func testDecodeBroadcastWithoutNameIsDropped() {
+        let dict: [String: Any] = [
+            "magic": Message.MAGIC,
+            "from": "x",
+            "to": "y",
+            "broadcast": ["param": "x"],
+        ]
+        let m = Message.from(dict: dict)
+        XCTAssertNotNil(m)
+        XCTAssertNil(m?.broadcast)
+    }
+
+    func testDecodeReplyWithoutIdIsDropped() {
+        let dict: [String: Any] = [
+            "magic": Message.MAGIC,
+            "from": "x",
+            "to": "y",
+            "reply": ["result": 1],
+        ]
+        let m = Message.from(dict: dict)
+        XCTAssertNotNil(m)
+        XCTAssertNil(m?.reply)
+    }
+}
+
+// MARK: - Webnat top-level
+
+@MainActor
+final class WebnatStaticTests: XCTestCase {
+    func testOfReturnsSameInstanceForSameWebView() {
+        let cfg = WKWebViewConfiguration()
+        Webnat.initialize(webViewConfiguration: cfg)
+        let webView = WKWebView(frame: .zero, configuration: cfg)
+        let a = Webnat.of(webView)
+        let b = Webnat.of(webView)
+        XCTAssertTrue(a === b)
+    }
+
+    func testOfDistinctForDifferentWebViews() {
+        let cfg1 = WKWebViewConfiguration()
+        Webnat.initialize(webViewConfiguration: cfg1)
+        let v1 = WKWebView(frame: .zero, configuration: cfg1)
+        let cfg2 = WKWebViewConfiguration()
+        Webnat.initialize(webViewConfiguration: cfg2)
+        let v2 = WKWebView(frame: .zero, configuration: cfg2)
+        XCTAssertFalse(Webnat.of(v1) === Webnat.of(v2))
+    }
+
+    func testInitializePrependsWebnatUserAgent() {
+        let cfg = WKWebViewConfiguration()
+        cfg.applicationNameForUserAgent = "MyApp/1.0"
+        Webnat.initialize(webViewConfiguration: cfg)
+        let ua = cfg.applicationNameForUserAgent ?? ""
+        XCTAssertTrue(ua.contains("Webnat/"))
+        XCTAssertTrue(ua.contains("MyApp/1.0"))
+    }
+
+    func testInitializeIsIdempotent() {
+        let cfg = WKWebViewConfiguration()
+        cfg.applicationNameForUserAgent = "A/1"
+        Webnat.initialize(webViewConfiguration: cfg)
+        let firstUA = cfg.applicationNameForUserAgent ?? ""
+        Webnat.initialize(webViewConfiguration: cfg)
+        let secondUA = cfg.applicationNameForUserAgent ?? ""
+        // 重复 initialize 不应累加多个 Webnat/x 段
+        let count = secondUA.components(separatedBy: "Webnat/").count - 1
+        XCTAssertEqual(count, 1, "重复 initialize 不应在 UA 中累加 Webnat 段；当前 UA: \(secondUA)")
+        XCTAssertEqual(firstUA.contains("A/1"), secondUA.contains("A/1"))
     }
 }

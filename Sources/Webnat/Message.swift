@@ -402,10 +402,17 @@ public class Message: @unchecked Sendable {
         return dict
     }
 
-    /// `JSONSerialization` 等产生的 `Any?` 转为 `Sendable?`（`Sendable` 为 marker protocol，不能对 `Any` 做条件转换）
+    /// `JSONSerialization` 等产生的 `Any?` 转为 `Sendable?`。
+    ///
+    /// 行为约定：
+    /// - 输入为 `nil` 或缺失：返回 `nil`。
+    /// - 输入为 `NSNull`：保留为 `NSNull()` 占位（语义上「显式 null」与「字段缺失」是不同的）。
+    /// - 已识别的 JSON 基本类型：原样返回。
+    /// - 集合内出现未识别的元素：**跳过**该元素（不再让整个集合失败）。
+    /// - 顶层未识别类型：返回 `nil`。
     private static func sendable(fromJSON value: Any?) -> Sendable? {
         guard let value else { return nil }
-        if value is NSNull { return nil }
+        if value is NSNull { return NSNull() }
         return sendable(fromJSONObject: value)
     }
 
@@ -436,16 +443,18 @@ public class Message: @unchecked Sendable {
             var out: [String: Sendable] = [:]
             out.reserveCapacity(dict.count)
             for (key, child) in dict {
-                guard let childSendable = sendable(fromJSON: child as Any?) else { return nil }
-                out[key] = childSendable
+                if let childSendable = sendable(fromJSON: child) {
+                    out[key] = childSendable
+                }
             }
             return out
         case let array as [Any]:
             var out: [Sendable] = []
             out.reserveCapacity(array.count)
             for child in array {
-                guard let childSendable = sendable(fromJSON: child) else { return nil }
-                out.append(childSendable)
+                if let childSendable = sendable(fromJSON: child) {
+                    out.append(childSendable)
+                }
             }
             return out
         case let dict as NSDictionary:
