@@ -6,8 +6,8 @@ import PackageDescription
 let package = Package(
     name: "Webnat",
     platforms: [
-        .iOS(.v12),
-        .macOS(.v11)
+        .iOS(.v13),
+        .macOS(.v10_15)
     ],
     products: [
         .library(

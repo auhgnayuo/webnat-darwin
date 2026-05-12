@@ -95,7 +95,7 @@ final class BroadcastWebnat {
     ///
     /// - Parameter name: 广播事件名称
     /// - Returns: 监听广播事件的异步事件流（AsyncStream）
-    @available(iOS 13.0, *)
+    @available(iOS 13.0, macOS 10.15, *)
     func listen(name: String) -> AsyncStream<(Sendable?, Connection)> {
         return AsyncStream { continuation in
             // 如果还没有监听器，创建一个监听器数组
@@ -176,7 +176,7 @@ final class BroadcastWebnat {
         listeners?.forEach { listener in
             if let l = listener.value as? BroadcastBlockListener {
                 l(broadcast.param, connection)
-            } else if #available(iOS 13.0, *), let l = listener.value as? AsyncStream<(Sendable?, Connection)>.Continuation {
+            } else if #available(iOS 13.0, macOS 10.15, *), let l = listener.value as? AsyncStream<(Sendable?, Connection)>.Continuation {
                 l.yield((broadcast.param, connection))
             }
         }

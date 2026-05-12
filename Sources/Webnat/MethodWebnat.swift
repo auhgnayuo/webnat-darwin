@@ -287,7 +287,7 @@ final class MethodWebnat {
     ///   - 取消错误（`WebnatErrorCode.cancelled`）
     ///   - 连接关闭错误（`WebnatErrorCode.closed`）
     ///   - 其他执行错误
-    @available(iOS 13.0.0, *)
+    @available(iOS 13.0, macOS 10.15, *)
     @discardableResult
     public func method(
         _ method: String,

@@ -58,7 +58,8 @@ public class Webnat: NSObject {
     /// let webView = WKWebView(frame: .zero, configuration: config)
     /// ```
     public static func initialize(webViewConfiguration: WKWebViewConfiguration) {
-        if #available(iOS 14.0, *) {
+        // `allowsContentJavaScript` is iOS 14+ / macOS 11+; keep iOS 13 / macOS 10.15 on `javaScriptEnabled`.
+        if #available(iOS 14.0, macOS 11.0, *) {
             webViewConfiguration.defaultWebpagePreferences.allowsContentJavaScript = true
         } else {
             webViewConfiguration.preferences.javaScriptEnabled = true
@@ -257,7 +258,7 @@ public class Webnat: NSObject {
     ///     }
     /// }
     /// ```
-    @available(iOS 13.0, *)
+    @available(iOS 13.0, macOS 10.15, *)
     public func listenBroadcast(name: String) -> AsyncStream<(Sendable?, Connection)> {
         return broadcastWebnat.listen(name: name)
     }
@@ -454,7 +455,7 @@ public class Webnat: NSObject {
     ///     }
     /// }
     /// ```
-    @available(iOS 13.0.0, *)
+    @available(iOS 13.0, macOS 10.15, *)
     @discardableResult
     public func method(
         _ method: String,

@@ -5,4 +5,4 @@
 //  Created by Auhgnayuo on 2026/2/26.
 //
 
-let WebnatVersion = "1.0.3"
+let WebnatVersion = "1.1.0"

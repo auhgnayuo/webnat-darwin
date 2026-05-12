@@ -1,7 +1,7 @@
 # Webnat
 
 [![Swift](https://img.shields.io/badge/Swift-5.5-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/Platform-iOS%2012%2B%20%7C%20macOS%2011%2B-lightgrey.svg)](https://developer.apple.com)
+[![Platform](https://img.shields.io/badge/Platform-iOS%2013%2B%20%7C%20macOS%2010.15%2B-lightgrey.svg)](https://developer.apple.com)
 [![SPM](https://img.shields.io/badge/SPM-Compatible-brightgreen.svg)](https://swift.org/package-manager)
 [![CocoaPods](https://img.shields.io/badge/CocoaPods-Git%20podspec-ff69b4.svg)](https://guides.cocoapods.org/syntax/podfile.html#pod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -18,17 +18,17 @@ A lightweight WebView–Native bridge for iOS and macOS, built on WebKit’s `WK
 | | Version |
 |--|--|
 | Swift | 5.5+ |
-| iOS | 12.0+ |
-| macOS | 11.0+ |
+| iOS | 13.0+ |
+| macOS | 10.15+ |
 | Xcode | 14+ recommended (Swift 6–friendly toolchains) |
 
 **Threading:** `Webnat` and related APIs are main-thread oriented (`@MainActor`). Call `initialize`, `of`, listeners, and sends from the main thread unless your app’s architecture already guarantees the same execution context as the web view.
 
-**Concurrency:** `async`/`await` method calls, `AsyncStream` broadcast listening, and related APIs require **iOS 13+** (and the equivalent macOS version for those APIs). On older iOS versions, use the callback-based `method` overload.
+**Concurrency:** `async`/`await` method calls, `AsyncStream` broadcast listening, and related APIs use Swift concurrency, which this package targets at **iOS 13+** and **macOS 10.15+** (build with a Swift 5.5+ toolchain; Xcode applies the usual runtime back-deployment for these OS versions).
 
 ## Features
 
-- **Multi-platform** — iOS 12+ and macOS 11+
+- **Multi-platform** — iOS 13+ and macOS 10.15+
 - **iframe support** — message forwarding between the main frame and iframes
 - **Three modes** — raw messages, broadcast, and RPC-style methods
 - **Timeout and cancellation** — built-in timeout and cooperative cancel
@@ -46,16 +46,24 @@ Pin versions to a [Git tag](https://github.com/auhgnayuo/webnat-darwin/releases)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.0.3")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.1.0")
 ]
 ```
 
 In Xcode: **File → Add Package Dependencies…** → enter `https://github.com/auhgnayuo/webnat-darwin.git` → add the **Webnat** product.
 
-### CocoaPods (Git, no trunk)
+### CocoaPods
+
+From [CocoaPods trunk](https://cocoapods.org/pods/Webnat) (after the maintainer has pushed that version):
 
 ```ruby
-pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.0.3'
+pod 'Webnat', '1.1.0'
+```
+
+Or track this repository directly:
+
+```ruby
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.1.0'
 ```
 
 Track a branch:
@@ -121,8 +129,8 @@ let broadcastListener: BroadcastBlockListener = { param, connection in
 }
 webnat.onBroadcast(name: "userLoggedIn", listener: broadcastListener)
 
-// Stream broadcasts (iOS 13+)
-if #available(iOS 13.0, *) {
+// Stream broadcasts (Swift concurrency)
+if #available(iOS 13.0, macOS 10.15, *) {
     Task {
         for await (param, connection) in webnat.listenBroadcast(name: "userLoggedIn") {
             print("Broadcast from \(connection.id):", param ?? "nil")
@@ -130,7 +138,7 @@ if #available(iOS 13.0, *) {
     }
 }
 
-// Call a Web-side method (callback; works on all supported iOS versions)
+// Call a Web-side method (callback; works on all supported platforms)
 webnat.method(
     "getUserInfo",
     param: ["userId": 123],
@@ -144,8 +152,8 @@ webnat.method(
     }
 }
 
-// Same call with async/await (iOS 13+)
-if #available(iOS 13.0, *) {
+// Same call with async/await (Swift concurrency)
+if #available(iOS 13.0, macOS 10.15, *) {
     Task {
         do {
             let result = try await webnat.method(
