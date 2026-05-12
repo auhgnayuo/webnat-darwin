@@ -15,6 +15,7 @@ import WebKit
 /// 实现 `WKScriptMessageHandler` 协议，作为 Web 端与 Native 端之间的消息桥接。
 ///
 /// - Note: 这是内部类，不应直接使用
+@MainActor
 final class ScriptMessageHandler: NSObject {
     // 无状态；具体逻辑在 `WKScriptMessageHandler` 扩展中。
 }
