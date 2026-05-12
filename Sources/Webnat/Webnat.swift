@@ -74,6 +74,7 @@ public class Webnat: NSObject {
         webViewConfiguration.applicationNameForUserAgent = updatedComponents.joined(separator: " ")
         
         webViewConfiguration.userContentController.removeScriptMessageHandler(forName: namespace)
+        // 每个 configuration 使用独立的无状态 handler 实例，由 `WKUserContentController` 持有；`remove` + `add` 与 `Webnat.of` 路由配合即可。
         webViewConfiguration.userContentController.add(ScriptMessageHandler(), name: namespace)
     }
     
@@ -427,8 +428,7 @@ public class Webnat: NSObject {
     /// - Parameters:
     ///   - method: 要调用的方法名称
     ///   - param: 方法参数，可以是任意可序列化的对象，可选
-    ///   - timeout: 超时时间（秒）；`nil` 表示永不超时。
-    ///     大于 `0` 时超时后会自动取消调用并抛出超时错误；`0` 与 `nil` 一样不启用超时定时器
+    ///   - timeout: 超时时间（秒）。`nil`、非正数或非有限值（如 `.infinity`）均**不**注册超时定时器；仅有限且 `> 0` 时超时后会自动取消调用并抛出超时错误
     ///   - onNotification: 收到通知时的回调函数，用于接收方法执行过程中的进度或状态更新
     ///     - param: 通知内容，可以是进度信息、中间结果等
     ///   - connection: 目标连接，如果为 `nil` 则选择第一个可用连接

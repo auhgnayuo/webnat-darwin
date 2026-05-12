@@ -102,20 +102,19 @@ final class BroadcastWebnat {
             if listeners[name] == nil {
                 listeners[name] = []
             }
-            // 将 continuation 包装为 Listener 后注册
-            let l = Listener(value: continuation)
+            let handle = BroadcastAsyncStreamHandle(continuation)
+            let l = Listener(value: handle)
             listeners[name]!.append(l)
-            // 当流被取消或终止时，自动注销监听器
             continuation.onTermination = { [weak self] _ in
-                guard let self else {
-                    return
-                }
-                // 在主线程上处理注销
+                handle.finish()
                 Task { @MainActor [weak self] in
                     guard let self else {
                         return
                     }
-                    listeners[name]?.removeAll(where: { $0 === l })
+                    self.listeners[name]?.removeAll(where: { $0 === l })
+                    if self.listeners[name]?.isEmpty == true {
+                        self.listeners.removeValue(forKey: name)
+                    }
                 }
             }
         }
@@ -176,9 +175,57 @@ final class BroadcastWebnat {
         listeners?.forEach { listener in
             if let l = listener.value as? BroadcastBlockListener {
                 l(broadcast.param, connection)
-            } else if #available(iOS 13.0, macOS 10.15, *), let l = listener.value as? AsyncStream<(Sendable?, Connection)>.Continuation {
-                l.yield((broadcast.param, connection))
+            } else if #available(iOS 13.0, macOS 10.15, *),
+                      let handle = listener.value as? BroadcastAsyncStreamHandle
+            {
+                handle.yield((broadcast.param, connection))
             }
         }
+    }
+}
+
+// MARK: - AsyncStream broadcast sink
+
+/// 包装 `AsyncStream` 的 continuation：终止时同步标记结束并 `finish()`，投递前检查标志，避免取消后长时间仍挂在 `listeners` 里且继续 yield（`onTermination` 与 `onConnectionReceive` 的竞态由标志 + 主线程 `finish` 收敛）。
+private final class BroadcastAsyncStreamHandle: @unchecked Sendable {
+    private let continuation: AsyncStream<(Sendable?, Connection)>.Continuation
+    private let lock = NSLock()
+    private var isFinished = false
+
+    init(_ continuation: AsyncStream<(Sendable?, Connection)>.Continuation) {
+        self.continuation = continuation
+    }
+
+    /// 在流终止时调用：幂等；`continuation.finish()` 派发到主队列以匹配 Webnat 的 MainActor 使用面。
+    func finish() {
+        var shouldFinish = false
+        lock.lock()
+        if !isFinished {
+            isFinished = true
+            shouldFinish = true
+        }
+        lock.unlock()
+        guard shouldFinish else {
+            return
+        }
+        let cont = continuation
+        if Thread.isMainThread {
+            cont.finish()
+        } else {
+            DispatchQueue.main.async {
+                cont.finish()
+            }
+        }
+    }
+
+    /// 仅在 Main线程 / MainActor 上的 `onConnectionReceive` 调用。
+    func yield(_ value: (Sendable?, Connection)) {
+        lock.lock()
+        let ended = isFinished
+        lock.unlock()
+        guard !ended else {
+            return
+        }
+        continuation.yield(value)
     }
 }
