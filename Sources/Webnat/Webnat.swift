@@ -506,7 +506,7 @@ public class Webnat: NSObject {
 
         // 未指定连接：广播竞赛。复用回调版（其内部已处理 JS 保活与竞赛裁决）
         let cbTimeout = timeout ?? .greatestFiniteMagnitude
-        var cancel: MethodCancellation?
+        nonisolated(unsafe) var cancel: MethodCancellation?
         return try await withTaskCancellationHandler(
             operation: {
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Sendable?, Error>) in

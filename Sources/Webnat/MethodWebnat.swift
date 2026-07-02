@@ -296,7 +296,7 @@ final class MethodWebnat {
         onNotification: MethodOnNotification? = nil,
         connection: Connection? = nil,
     ) async throws -> Sendable? {
-        var cancel: MethodCancellation?
+        nonisolated(unsafe) var cancel: MethodCancellation?
         return try await withTaskCancellationHandler(
             operation: {
                 try await withCheckedThrowingContinuation { continuation in
