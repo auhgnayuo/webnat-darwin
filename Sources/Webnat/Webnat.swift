@@ -371,6 +371,9 @@ public class Webnat: NSObject {
     /// 5. 等待结果、超时或被取消
     /// 6. 清理资源并触发回调
     ///
+    /// > 未指定 `connection`（广播）时，上述流程会对每个连接各执行一次，并按「谁先返回用谁的」
+    /// > 竞赛裁决，详见下方 `connection` 参数说明。
+    ///
     /// - Parameters:
     ///   - method: 要调用的方法名称
     ///   - param: 方法参数，可以是任意可序列化的对象，可选
@@ -381,7 +384,9 @@ public class Webnat: NSObject {
     ///   - callback: 完成回调，接收方法执行结果或错误
     ///     - result: 方法执行结果，成功时传入，失败时为 `nil`
     ///     - error: 错误信息，失败时传入，成功时为 `nil`
-    ///   - connection: 目标连接，如果为 `nil` 则选择第一个可用连接
+    ///   - connection: 目标连接。传入具体连接时只调用该连接；为 `nil` 时**广播**给当前所有连接
+    ///     （主框架 + 所有 iframe），并按「谁先返回用谁的」裁决：第一个发来 notify / 成功 / 真实业务错误的
+    ///     连接获胜，其余被 `abort`；仅回 `unimplemented`/`closed` 的连接不参与获胜，全部如此时才失败。
     /// - Returns: 取消函数，调用此函数可以主动取消正在执行的方法调用
     ///
     /// ## 使用示例
@@ -412,13 +417,32 @@ public class Webnat: NSObject {
         callback: MethodCallback? = nil,
         connection: Connection? = nil,
     ) -> MethodCancellation {
-        let connection = connection ?? connections.values.first
         let effectiveTimeout = Self.normalizedRPCTimeout(timeout)
         javaScriptAliveKeeper.increaseReference()
-        return methodWebnat.method( method, param: param, timeout: effectiveTimeout,onNotification: onNotification, callback: { [weak self] in
-            callback?($0, $1)
-            self?.javaScriptAliveKeeper.decreaseReference()
-        }, connection: connection)
+
+        // 指定了连接：沿用单连接直连语义
+        if let connection {
+            return methodWebnat.method(method, param: param, timeout: effectiveTimeout, onNotification: onNotification, callback: { [weak self] in
+                callback?($0, $1)
+                self?.javaScriptAliveKeeper.decreaseReference()
+            }, connection: connection)
+        }
+
+        // 未指定连接：广播给所有连接（主框架 + 所有 iframe），谁先返回用谁的
+        let call = BroadcastMethodCall(
+            method: method,
+            onNotification: onNotification,
+            callback: callback,
+            onFinished: { [weak self] in
+                self?.javaScriptAliveKeeper.decreaseReference()
+            }
+        )
+        return call.start(
+            connections: Array(connections.values),
+            methodWebnat: methodWebnat,
+            param: param,
+            timeout: effectiveTimeout
+        )
     }
     
     /// 调用 Web 端方法（异步版本）
@@ -431,7 +455,8 @@ public class Webnat: NSObject {
     ///   - timeout: 超时时间（秒）。`nil`、非正数或非有限值（如 `.infinity`）均**不**注册超时定时器；仅有限且 `> 0` 时超时后会自动取消调用并抛出超时错误
     ///   - onNotification: 收到通知时的回调函数，用于接收方法执行过程中的进度或状态更新
     ///     - param: 通知内容，可以是进度信息、中间结果等
-    ///   - connection: 目标连接，如果为 `nil` 则选择第一个可用连接
+    ///   - connection: 目标连接。传入具体连接时只调用该连接；为 `nil` 时**广播**给当前所有连接
+    ///     （主框架 + 所有 iframe），并按「谁先返回用谁的」裁决（详见回调版说明）
     /// - Returns: 方法执行结果，可以是任意可序列化的对象，可选
     /// - Throws: 方法执行错误，包括：
     ///   - 超时错误（`WebnatErrorCode.timeout`）
@@ -464,17 +489,49 @@ public class Webnat: NSObject {
         onNotification: MethodOnNotification? = nil,
         connection: Connection? = nil,
     ) async throws -> Sendable? {
-        javaScriptAliveKeeper.increaseReference()
-        defer {
-            javaScriptAliveKeeper.decreaseReference()
+        // 指定了连接：沿用单连接直连语义
+        if let connection {
+            javaScriptAliveKeeper.increaseReference()
+            defer {
+                javaScriptAliveKeeper.decreaseReference()
+            }
+            return try await methodWebnat.method(
+                method,
+                param: param,
+                timeout: timeout,
+                onNotification: onNotification,
+                connection: connection
+            )
         }
-        let resolvedConnection = connection ?? connections.values.first
-        return try await methodWebnat.method(
-            method,
-            param: param,
-            timeout: timeout,
-            onNotification: onNotification,
-            connection: resolvedConnection
+
+        // 未指定连接：广播竞赛。复用回调版（其内部已处理 JS 保活与竞赛裁决）
+        let cbTimeout = timeout ?? .greatestFiniteMagnitude
+        var cancel: MethodCancellation?
+        return try await withTaskCancellationHandler(
+            operation: {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Sendable?, Error>) in
+                    cancel = self.method(
+                        method,
+                        param: param,
+                        timeout: cbTimeout,
+                        onNotification: onNotification,
+                        callback: { result, error in
+                            if let error {
+                                continuation.resume(throwing: error)
+                            } else {
+                                continuation.resume(returning: result)
+                            }
+                        },
+                        connection: nil
+                    )
+                }
+            },
+            onCancel: {
+                Task { @MainActor in
+                    cancel?()
+                }
+            },
+            isolation: MainActor.shared
         )
     }
 

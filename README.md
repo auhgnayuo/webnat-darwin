@@ -46,7 +46,7 @@ Pin versions to a [Git tag](https://github.com/auhgnayuo/webnat-darwin/releases)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.1.0")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.2.0")
 ]
 ```
 
@@ -57,13 +57,13 @@ In Xcode: **File → Add Package Dependencies…** → enter `https://github.com
 From [CocoaPods trunk](https://cocoapods.org/pods/Webnat) (after the maintainer has pushed that version):
 
 ```ruby
-pod 'Webnat', '1.1.0'
+pod 'Webnat', '1.2.0'
 ```
 
 Or track this repository directly:
 
 ```ruby
-pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.1.0'
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.2.0'
 ```
 
 Track a branch:

@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'Webnat'
-  s.version          = '1.1.0'
+  s.version          = '1.2.0'
   s.summary          = 'Lightweight WebView–Native bridge for iOS and macOS using WKWebView.'
   s.description      = <<-DESC
     Webnat is a lightweight bridge library between native code and web content.

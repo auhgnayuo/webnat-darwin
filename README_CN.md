@@ -46,7 +46,7 @@ Webnat 是用于 iOS / macOS 上 `WKWebView` 与 Native 通信的 Swift 库，�
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.1.0")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.2.0")
 ]
 ```
 
@@ -57,13 +57,13 @@ dependencies: [
 [CocoaPods 公有源（Trunk）](https://cocoapods.org/pods/Webnat)（在维护者已推送该版本之后）：
 
 ```ruby
-pod 'Webnat', '1.1.0'
+pod 'Webnat', '1.2.0'
 ```
 
 或直接引用本仓库：
 
 ```ruby
-pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.1.0'
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.2.0'
 ```
 
 跟分支：

@@ -479,6 +479,248 @@ final class MethodWebnatTests: XCTestCase {
     }
 }
 
+// MARK: - BroadcastMethodCall (广播竞赛协调器)
+
+@MainActor
+final class BroadcastMethodCallTests: XCTestCase {
+    /// 记录某连接发出的所有消息
+    private final class Recorder {
+        var messages: [Message] = []
+    }
+
+    /// 构造一个 mock 连接：记录出站消息，并可在收到 invoke 时回调
+    private func makeConn(
+        id: String,
+        recorder: Recorder,
+        onInvoke: ((Invoke, Connection) -> Void)? = nil
+    ) -> Connection {
+        var conn: Connection!
+        conn = Connection(id: id, attributes: nil, url: nil) { message, completion in
+            recorder.messages.append(message)
+            if let inv = message.invoke {
+                onInvoke?(inv, conn)
+            }
+            completion?(nil)
+        }
+        return conn
+    }
+
+    private func reply(_ rpc: MethodWebnat, _ conn: Connection, id: String, result: Sendable? = nil, error: Sendable? = nil) {
+        rpc.onConnectionReceive(connection: conn, message: Message(from: conn.id, to: Message.NATIVE_UUID, reply: Reply(id: id, result: result, error: error)))
+    }
+
+    private func notify(_ rpc: MethodWebnat, _ conn: Connection, id: String, param: Sendable?) {
+        rpc.onConnectionReceive(connection: conn, message: Message(from: conn.id, to: Message.NATIVE_UUID, notify: Notify(id: id, param: param)))
+    }
+
+    private func makeCall(
+        method: String = "m",
+        onNotification: MethodOnNotification? = nil,
+        callback: MethodCallback? = nil
+    ) -> BroadcastMethodCall {
+        BroadcastMethodCall(method: method, onNotification: onNotification, callback: callback, onFinished: {})
+    }
+
+    func testEmptyConnectionsReturnsClosed() {
+        let rpc = MethodWebnat()
+        let exp = expectation(description: "closed")
+        let call = makeCall(callback: { _, error in
+            XCTAssertEqual((error as NSError?)?.code, WebnatErrorCode.closed)
+            exp.fulfill()
+        })
+        _ = call.start(connections: [], methodWebnat: rpc, param: nil, timeout: nil)
+        wait(for: [exp], timeout: 1)
+    }
+
+    func testSuccessFromImplementerAmongUnimplemented() {
+        let rpc = MethodWebnat()
+        let r1 = Recorder()
+        let r2 = Recorder()
+        // conn1 未实现：稍早回 unimplemented
+        let conn1 = makeConn(id: "c1", recorder: r1) { inv, conn in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                self.reply(rpc, conn, id: inv.id, error: NSError.unimplemented("m").toJson())
+            }
+        }
+        // conn2 实现：稍晚回结果
+        let conn2 = makeConn(id: "c2", recorder: r2) { inv, conn in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
+                self.reply(rpc, conn, id: inv.id, result: 42)
+            }
+        }
+        let exp = expectation(description: "result")
+        let call = makeCall(callback: { result, error in
+            XCTAssertNil(error)
+            XCTAssertEqual(result as? Int, 42)
+            exp.fulfill()
+        })
+        _ = call.start(connections: [conn1, conn2], methodWebnat: rpc, param: nil, timeout: nil)
+        wait(for: [exp], timeout: 2)
+    }
+
+    func testAllUnimplementedReturnsUnimplemented() {
+        let rpc = MethodWebnat()
+        let r = Recorder()
+        let mk: (String) -> Connection = { id in
+            self.makeConn(id: id, recorder: r) { inv, conn in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                    self.reply(rpc, conn, id: inv.id, error: NSError.unimplemented("m").toJson())
+                }
+            }
+        }
+        let exp = expectation(description: "unimpl")
+        let call = makeCall(callback: { _, error in
+            XCTAssertEqual((error as NSError?)?.code, WebnatErrorCode.unimplemented)
+            exp.fulfill()
+        })
+        _ = call.start(connections: [mk("c1"), mk("c2"), mk("c3")], methodWebnat: rpc, param: nil, timeout: nil)
+        wait(for: [exp], timeout: 2)
+    }
+
+    func testNotifyForwardedFromWinnerAndLosersAborted() {
+        let rpc = MethodWebnat()
+        let r1 = Recorder()
+        let r2 = Recorder()
+        // conn1 胜者：先 notify，稍后 reply
+        let conn1 = makeConn(id: "c1", recorder: r1) { inv, conn in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                self.notify(rpc, conn, id: inv.id, param: "p")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                self.reply(rpc, conn, id: inv.id, result: 1)
+            }
+        }
+        // conn2 落败：从不主动回复，等待被 abort
+        let conn2 = makeConn(id: "c2", recorder: r2)
+        let expNotify = expectation(description: "notify")
+        let expDone = expectation(description: "done")
+        let call = makeCall(
+            onNotification: { p in
+                XCTAssertEqual(p as? String, "p")
+                expNotify.fulfill()
+            },
+            callback: { result, error in
+                XCTAssertNil(error)
+                XCTAssertEqual(result as? Int, 1)
+                expDone.fulfill()
+            }
+        )
+        _ = call.start(connections: [conn1, conn2], methodWebnat: rpc, param: nil, timeout: nil)
+        wait(for: [expNotify, expDone], timeout: 2, enforceOrder: true)
+        XCTAssertTrue(r2.messages.contains { $0.abort != nil }, "落败连接应收到 abort")
+    }
+
+    func testGroupTimeout() {
+        let rpc = MethodWebnat()
+        let r = Recorder()
+        // 两个连接都不回复
+        let conn1 = makeConn(id: "c1", recorder: r)
+        let conn2 = makeConn(id: "c2", recorder: r)
+        let exp = expectation(description: "timeout")
+        let call = makeCall(callback: { _, error in
+            XCTAssertEqual((error as NSError?)?.code, WebnatErrorCode.timeout)
+            exp.fulfill()
+        })
+        _ = call.start(connections: [conn1, conn2], methodWebnat: rpc, param: nil, timeout: 0.2)
+        wait(for: [exp], timeout: 2)
+    }
+
+    func testRealErrorWins() {
+        let rpc = MethodWebnat()
+        let r1 = Recorder()
+        let r2 = Recorder()
+        let conn1 = makeConn(id: "c1", recorder: r1) { inv, conn in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
+                self.reply(rpc, conn, id: inv.id, error: NSError(domain: WebnatErrorDomain, code: 123, userInfo: [NSLocalizedDescriptionKey: "boom"]).toJson())
+            }
+        }
+        let conn2 = makeConn(id: "c2", recorder: r2) { inv, conn in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                self.reply(rpc, conn, id: inv.id, error: NSError.unimplemented("m").toJson())
+            }
+        }
+        let exp = expectation(description: "real error")
+        let call = makeCall(callback: { _, error in
+            XCTAssertEqual((error as NSError?)?.code, 123)
+            exp.fulfill()
+        })
+        _ = call.start(connections: [conn1, conn2], methodWebnat: rpc, param: nil, timeout: nil)
+        wait(for: [exp], timeout: 2)
+    }
+
+    func testClosedAmongUnimplementedReturnsClosed() {
+        let rpc = MethodWebnat()
+        let r1 = Recorder()
+        let r2 = Recorder()
+        // conn1 不回复，稍后由外部触发连接关闭 → closed
+        let conn1 = makeConn(id: "c1", recorder: r1)
+        // conn2 未实现
+        let conn2 = makeConn(id: "c2", recorder: r2) { inv, conn in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                self.reply(rpc, conn, id: inv.id, error: NSError.unimplemented("m").toJson())
+            }
+        }
+        let exp = expectation(description: "closed")
+        let call = makeCall(callback: { _, error in
+            XCTAssertEqual((error as NSError?)?.code, WebnatErrorCode.closed)
+            exp.fulfill()
+        })
+        _ = call.start(connections: [conn1, conn2], methodWebnat: rpc, param: nil, timeout: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            rpc.onConnectionClose(connection: conn1)
+        }
+        wait(for: [exp], timeout: 2)
+    }
+
+    func testUserCancelAbortsAllAndReturnsCancelled() {
+        let rpc = MethodWebnat()
+        let r1 = Recorder()
+        let r2 = Recorder()
+        let conn1 = makeConn(id: "c1", recorder: r1)
+        let conn2 = makeConn(id: "c2", recorder: r2)
+        let exp = expectation(description: "cancelled")
+        let call = makeCall(callback: { _, error in
+            XCTAssertEqual((error as NSError?)?.code, WebnatErrorCode.cancelled)
+            exp.fulfill()
+        })
+        let cancel = call.start(connections: [conn1, conn2], methodWebnat: rpc, param: nil, timeout: nil)
+        cancel()
+        wait(for: [exp], timeout: 1)
+        XCTAssertTrue(r1.messages.contains { $0.abort != nil }, "取消后 conn1 应收到 abort")
+        XCTAssertTrue(r2.messages.contains { $0.abort != nil }, "取消后 conn2 应收到 abort")
+    }
+
+    func testSingleCallbackEvenWithLateLoserReply() {
+        let rpc = MethodWebnat()
+        let r1 = Recorder()
+        let r2 = Recorder()
+        // conn1 胜者，快速成功
+        let conn1 = makeConn(id: "c1", recorder: r1) { inv, conn in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                self.reply(rpc, conn, id: inv.id, result: "win")
+            }
+        }
+        // conn2 落败者，迟到才回复（被 abort 后仍尝试回复，应被忽略）
+        let conn2 = makeConn(id: "c2", recorder: r2) { inv, conn in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.reply(rpc, conn, id: inv.id, result: "late")
+            }
+        }
+        var callbackCount = 0
+        var finalResult: Sendable?
+        let call = makeCall(callback: { result, _ in
+            callbackCount += 1
+            finalResult = result
+        })
+        _ = call.start(connections: [conn1, conn2], methodWebnat: rpc, param: nil, timeout: nil)
+        let exp = expectation(description: "settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { exp.fulfill() }
+        wait(for: [exp], timeout: 1)
+        XCTAssertEqual(callbackCount, 1, "只应回调一次")
+        XCTAssertEqual(finalResult as? String, "win")
+    }
+}
+
 // MARK: - Message edge cases
 
 @MainActor
