@@ -13,7 +13,7 @@ Pod::Spec.new do |s|
   s.author           = { 'Auhgnayuo' => 'https://github.com/auhgnayuo' }
   s.source           = { :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => s.version.to_s }
 
-  s.swift_versions   = ['5.5', '5.6', '5.7', '5.8', '5.9', '5.10', '6.0']
+  s.swift_versions   = ['5.5']
   s.ios.deployment_target = '13.0'
   # iOS 14+/macOS 11+ use allowsContentJavaScript; below that use javaScriptEnabled. Swift concurrency targets iOS 13+/macOS 10.15+.
   s.osx.deployment_target = '10.15'
