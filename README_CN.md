@@ -46,7 +46,7 @@ Webnat 是用于 iOS / macOS 上 `WKWebView` 与 Native 通信的 Swift 库，�
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.2.0")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.4.0")
 ]
 ```
 
@@ -57,13 +57,13 @@ dependencies: [
 [CocoaPods 公有源（Trunk）](https://cocoapods.org/pods/Webnat)（在维护者已推送该版本之后）：
 
 ```ruby
-pod 'Webnat', '1.2.0'
+pod 'Webnat', '1.4.0'
 ```
 
 或直接引用本仓库：
 
 ```ruby
-pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.2.0'
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.4.0'
 ```
 
 跟分支：
@@ -184,6 +184,21 @@ let methodListener: MethodBlockListener = { param, callback, notify, connection 
     }
 }
 webnat.onMethod(name: "getUserInfo", listener: methodListener)
+```
+
+### 4. 发送失败与 handler 错误
+
+- 发送失败会让等待它的调用方知道：参数无法序列化时（`Date`、`NaN`、自定义类型不再让进程崩溃），`method` 立即以 `serializationFailed` 失败；WebView 已不存在或连接已关闭时以 `closed` 失败。`evaluateJavaScript` 报告的错误会让调用以该错误失败。`raw`、`broadcast` 仍是发出即忘。
+- method handler 通过 `callback(nil, error)` 报告失败（Swift 闭包不能 throw）。结果无法序列化时，回复 `serializationFailed`，调用方不会因此一直等到超时。
+
+### 5. 页面崩溃与销毁
+
+页面正常卸载时，Web SDK 会发送 CLOSE，Webnat 随之结束该连接。Web 内容进程崩溃或 WebView 被释放时页面没有机会发送，请把事件转给 Webnat：在你的 `webViewWebContentProcessDidTerminate(_:)` 里调用 `webnat.webViewWebContentProcessDidTerminate()`，释放 WebView 之前也调用一次。Webnat 会自行结束该页面的所有连接：待完成的 `method` 调用以 `closed` 失败，正在执行的 method handler 收到取消。不会向页面发送任何消息，Webnat 仍可继续使用，页面重新加载后会照常建立新连接。
+
+```swift
+func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    Webnat.of(webView).webViewWebContentProcessDidTerminate()
+}
 ```
 
 ## 隐私清单

@@ -46,7 +46,7 @@ Pin versions to a [Git tag](https://github.com/auhgnayuo/webnat-darwin/releases)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.2.0")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.4.0")
 ]
 ```
 
@@ -57,13 +57,13 @@ In Xcode: **File → Add Package Dependencies…** → enter `https://github.com
 From [CocoaPods trunk](https://cocoapods.org/pods/Webnat) (after the maintainer has pushed that version):
 
 ```ruby
-pod 'Webnat', '1.2.0'
+pod 'Webnat', '1.4.0'
 ```
 
 Or track this repository directly:
 
 ```ruby
-pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.2.0'
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.4.0'
 ```
 
 Track a branch:
@@ -184,6 +184,21 @@ let methodListener: MethodBlockListener = { param, callback, notify, connection 
     }
 }
 webnat.onMethod(name: "getUserInfo", listener: methodListener)
+```
+
+### 4. Send failures and handler errors
+
+- A failed send is visible to the caller that waits for it: `method` fails at once with `serializationFailed` when the parameter cannot be serialized (a `Date`, `NaN` or a custom type is no longer a crash), and with `closed` when the web view is gone or the connection is closed. An error reported by `evaluateJavaScript` fails the call with that error. `raw` and `broadcast` stay fire-and-forget.
+- A method handler reports failure through `callback(nil, error)` (a Swift closure cannot throw). A result that cannot be serialized is answered with `serializationFailed`, so the caller never waits for its timeout because of it.
+
+### 5. Page crash and teardown
+
+When a page unloads normally, the Web SDK sends CLOSE and Webnat ends that connection. A crashed web content process or a released web view never gets to send it, so forward the event to Webnat: call `webnat.webViewWebContentProcessDidTerminate()` from your `webViewWebContentProcessDidTerminate(_:)`, and once more before you release the web view. Webnat then ends the page's connections itself: pending `method` calls fail with `closed` and running method handlers are cancelled. Nothing is sent to the page, and Webnat stays usable, so a reloaded page opens new connections as usual.
+
+```swift
+func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    Webnat.of(webView).webViewWebContentProcessDidTerminate()
+}
 ```
 
 ## Privacy

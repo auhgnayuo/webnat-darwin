@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-13
+
+### Added
+
+- **`webViewWebContentProcessDidTerminate()`**: tells Webnat that the web content process behind the web view has exited (crash, or the web view is about to be released); Webnat then ends the page's connections itself. Same semantics on Android, Darwin, OHOS and Electron. The method is named after each platform's own hook: `webViewWebContentProcessDidTerminate` on Darwin, `onRenderProcessGone` on Android and Electron, `onRenderExited` on OHOS. The host calls it from its own `webViewWebContentProcessDidTerminate(_:)` and before it releases the web view.
+
+### Fixed
+
+- A message that cannot be serialized no longer crashes the app: `JSONSerialization` raises an Objective-C exception for non-JSON values (`Date`, `NaN`, custom types) that Swift `do/catch` cannot catch. Webnat now validates first and fails the send with `serializationFailed`, so `method` fails at once.
+- A method result that cannot be serialized is answered with a `serializationFailed` error reply instead of being dropped.
+- A method handler that completes synchronously no longer leaves its cancel / close hooks registered forever.
+
 ## [1.2.0] - 2026-07-02
 
 ### Added

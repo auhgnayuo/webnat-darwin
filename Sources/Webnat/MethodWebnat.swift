@@ -441,7 +441,15 @@ final class MethodWebnat {
                     // 成功，发送结果响应
                     replyMessage = Message.reply(to: connection.id, id: id, result: result)
                 }
-                connection.send(replyMessage)
+                connection.send(replyMessage) { sendError in
+                    // 结果无法序列化时回复错误，否则调用方只能等到超时；其他发送失败保持静默
+                    guard error == nil, let sendError = sendError as NSError?,
+                          sendError.domain == WebnatErrorDomain,
+                          sendError.code == WebnatErrorCode.serializationFailed else {
+                        return
+                    }
+                    connection.send(Message.reply(to: connection.id, id: id, error: sendError.toJson()))
+                }
             }
             
             if let l = listener.value as? MethodBlockListener {
@@ -454,6 +462,10 @@ final class MethodWebnat {
                 }, {
                     notify($0)
                 }, connection)
+                // 监听器已同步完成：不再注册取消 / 关闭钩子，否则它们永远不会被清理
+                guard isCompleted == false else {
+                    return
+                }
                 // 注册取消函数（收到取消请求时会触发此 closure，进行清理和调用用户的 abort 逻辑）
                 aborts[id] = {
                     guard isCompleted == false else {

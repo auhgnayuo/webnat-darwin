@@ -112,6 +112,28 @@ public class Webnat: NSObject {
     /// 每个 WKWebView 可以有多个连接（主框架 + 多个 iframe）
     public private(set) var connections: [String: Connection] = [:]
     
+    /// 渲染进程已退出
+    ///
+    /// 宿主在 `webViewWebContentProcessDidTerminate(_:)` 触发时调用；释放 WebView 之前也调用一次。
+    /// 页面崩溃或被销毁时无法再发送 CLOSE，Webnat 据此自行结束该页面的所有连接：待完成的 `method` 调用
+    /// 以 `closed` 失败，正在执行的 method handler 收到取消。不会向页面发送任何消息，Webnat 仍可继续使用，
+    /// 页面重新加载后会照常建立新连接。可重复调用。
+    ///
+    /// ## 使用示例
+    ///
+    /// ```swift
+    /// func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    ///     Webnat.of(webView).webViewWebContentProcessDidTerminate()
+    /// }
+    /// ```
+    public func webViewWebContentProcessDidTerminate() {
+        // 先把所有连接标记并移除，再逐个通知：回调里看到的是已经全部关闭的状态
+        let closing = Array(connections.values)
+        connections.removeAll()
+        closing.forEach { $0.closed = true }
+        closing.forEach { onConnectionClose(connection: $0) }
+    }
+
     /// 原始消息处理器
     private let rawWebnat = RawWebnat()
     
@@ -601,7 +623,13 @@ public class Webnat: NSObject {
                 
                 do {
                     // 将单条消息包成 JSON 数组字面量，供 `receive(...)` 展开为参数
-                    let data = try JSONSerialization.data(withJSONObject: [messageToSend.toDictionary()])
+                    // JSONSerialization 遇到非 JSON 值（Date、NaN、自定义类型……）会抛出 Swift 抓不到的 NSException 使进程崩溃，必须先校验
+                    let payload = [messageToSend.toDictionary()]
+                    guard JSONSerialization.isValidJSONObject(payload) else {
+                        completion?(NSError.serializationFailed(messageToSend))
+                        return
+                    }
+                    let data = try JSONSerialization.data(withJSONObject: payload)
                     guard let string = String(data: data, encoding: .utf8) else {
                         completion?(NSError.serializationFailed(messageToSend))
                         return
