@@ -12,7 +12,7 @@ import Foundation
 /// 用于监听原始消息的回调类型，监听函数会在主线程上以 block 调用方式被执行。
 ///
 /// - Parameters:
-///   - param: 接收到的消息体内容，可以是任意可序列化的对象，可选
+///   - param: 接收到的消息体内容，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
 ///   - connection: 消息来源的连接对象
 public typealias RawBlockListener = @MainActor @Sendable @convention(block) ( _ param: Sendable?, _ connection: Connection) -> Void
 
@@ -32,7 +32,7 @@ public typealias RawBlockListener = @MainActor @Sendable @convention(block) ( _ 
 /// **特点**：
 /// - 支持多个监听器同时监听
 /// - 所有监听器都会收到相同的消息
-/// - 消息体可以是任意可序列化的对象
+/// - 消息体可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param）
 ///
 /// - Note: 这是内部类，不应直接使用，应通过 `Webnat` 类的 API 访问
 @MainActor
@@ -75,7 +75,7 @@ final class RawWebnat {
     /// 使用 `Message` 类构造消息并发送到 Web 端。
     ///
     /// - Parameters:
-    ///   - param: 消息体，可以是任意可序列化的对象（String、Int、Dictionary、Array 等）
+    ///   - param: 消息体，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param）（String、Int、Dictionary、Array 等）
     ///   - connection: 目标连接，如果连接已关闭则不会发送
     func raw(_ param: Sendable?, connection: Connection) {
         let message = Message.raw(to: connection.id, param: param)

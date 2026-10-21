@@ -12,7 +12,7 @@ import Foundation
 /// 用于接收方法调用执行结果的回调类型，会在主线程上以 block 调用方式被执行。
 ///
 /// - Parameters:
-///   - result: 方法执行结果，可以是任意可序列化的对象，成功时传入，失败时为 `nil`
+///   - result: 方法执行结果，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），成功时传入，失败时为 `nil`
 ///   - error: 错误信息，失败时传入，成功时为 `nil`
 public typealias MethodCallback = @MainActor @Sendable (_ result: Sendable?, _ error: Error?)->Void
 
@@ -25,7 +25,7 @@ public typealias MethodCancellation = @MainActor @Sendable () -> Void
 ///
 /// 用于接收方法执行过程中的通知（如进度、中间结果等），会在主线程上以 block 调用方式被执行。
 ///
-/// - Parameter param: 方法执行途中的通知内容，可以是任意可序列化的对象，可选
+/// - Parameter param: 方法执行途中的通知内容，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
 public typealias MethodOnNotification = @MainActor @Sendable (_ param: Sendable?) -> Void
 
 /// 方法监听器类型定义
@@ -33,7 +33,7 @@ public typealias MethodOnNotification = @MainActor @Sendable (_ param: Sendable?
 /// 用于处理来自 Web 端的方法调用请求，会在主线程上以 block 调用方式被执行。
 ///
 /// - Parameters:
-///   - param: 方法调用时传入的参数，可以是任意可序列化的对象，可选
+///   - param: 方法调用时传入的参数，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
 ///   - callback: 方法执行完成后的回调，用于返回结果或错误
 ///     - result: 方法执行结果，成功时传入，失败时为 `nil`
 ///     - error: 错误信息，失败时传入，成功时为 `nil`
@@ -136,7 +136,7 @@ final class MethodWebnat {
     ///
     /// - Parameters:
     ///   - method: 要调用的方法名称
-    ///   - param: 方法参数，可以是任意可序列化的对象，可选
+    ///   - param: 方法参数，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
     ///   - timeout: 超时时间（秒）；`nil` 或 `<= 0` 时不注册超时定时器。`> 0` 时超时后会自动取消调用并返回超时错误
     ///   - onNotification: 接收到途中的通知时回调，用于接收方法执行过程中的进度或状态更新
     ///     - param: 通知内容，可以是进度信息、中间结果等
@@ -276,12 +276,12 @@ final class MethodWebnat {
     ///
     /// - Parameters:
     ///   - method: 要调用的方法名称
-    ///   - param: 方法参数，可以是任意可序列化的对象，可选
+    ///   - param: 方法参数，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
     ///   - timeout: 超时时间（秒）；`nil` 或 `<= 0` 时不注册超时。`> 0` 时超时后会自动取消调用并抛出超时错误
     ///   - onNotification: 用于监听途中的通知回调，用于接收方法执行过程中的进度或状态更新
     ///     - param: 通知内容，可以是进度信息、中间结果等
     ///   - connection: 目标连接；`nil` 时立即失败（`closed`）。由 `Webnat.method` 异步入口负责解析默认连接。
-    /// - Returns: 方法执行结果，可以是任意可序列化的对象，可选
+    /// - Returns: 方法执行结果，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
     /// - Throws: 方法执行错误，包括：
     ///   - 超时错误（`WebnatErrorCode.timeout`）
     ///   - 取消错误（`WebnatErrorCode.cancelled`）
@@ -422,8 +422,13 @@ final class MethodWebnat {
                 guard isCompleted == false else {
                     return
                 }
-                let notifyMessage = Message.notify(to: connection.id, id: id, param: param)
-                connection.send(notifyMessage)
+                do {
+                    // Objective-C block 会桥接 Swift 字典 / 数组；恢复业务值后再编码。
+                    let notifyMessage = Message.notify(to: connection.id, id: id, param: try fromJsonValue(param))
+                    connection.send(notifyMessage)
+                } catch {
+                    // 通知没有完成回调，非法通知不发送（与发送失败语义一致）。
+                }
             }
          
             /// 完成回调：向调用方发送最终的执行结果或错误
@@ -439,7 +444,12 @@ final class MethodWebnat {
                     replyMessage = Message.reply(to: connection.id, id: id, error: (error as NSError).toJson())
                 } else {
                     // 成功，发送结果响应
-                    replyMessage = Message.reply(to: connection.id, id: id, result: result)
+                    do {
+                        replyMessage = Message.reply(to: connection.id, id: id, result: try fromJsonValue(result))
+                    } catch {
+                        replyMessage = Message.reply(to: connection.id, id: id,
+                                                     error: NSError.serializationFailed("Invalid method result").toJson())
+                    }
                 }
                 connection.send(replyMessage) { sendError in
                     // 结果无法序列化时回复错误，否则调用方只能等到超时；其他发送失败保持静默

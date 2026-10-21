@@ -1,6 +1,6 @@
 # Webnat
 
-[![Swift](https://img.shields.io/badge/Swift-5.5-orange.svg)](https://swift.org)
+[![Swift](https://img.shields.io/badge/Swift-5.7-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/Platform-iOS%2013%2B%20%7C%20macOS%2010.15%2B-lightgrey.svg)](https://developer.apple.com)
 [![SPM](https://img.shields.io/badge/SPM-Compatible-brightgreen.svg)](https://swift.org/package-manager)
 [![CocoaPods](https://img.shields.io/badge/CocoaPods-Git%20podspec-ff69b4.svg)](https://guides.cocoapods.org/syntax/podfile.html#pod)
@@ -17,14 +17,14 @@ Webnat 是用于 iOS / macOS 上 `WKWebView` 与 Native 通信的 Swift 库，�
 
 | | 版本 |
 |--|--|
-| Swift | 5.5+ |
+| Swift | 5.7+ |
 | iOS | 13.0+ |
 | macOS | 10.15+ |
 | Xcode | 建议 14+（便于 Swift 6 工具链） |
 
 **线程：** `Webnat` 及相关 API 以主线程为主（`@MainActor`）。请在主线程调用 `initialize`、`of`、监听与发送，或与 WebView 生命周期一致的队列上调用。
 
-**并发：** `async`/`await`、`AsyncStream` 等基于 Swift 并发；本包最低系统为 **iOS 13+**、**macOS 10.15+**（使用 Swift 5.5+ 工具链编译；Xcode 会对上述系统做并发运行时回退）。不需要 async 时仍可使用带 `callback` 的 `method` 重载。
+**并发：** `async`/`await`、`AsyncStream` 等基于 Swift 并发；本包最低系统为 **iOS 13+**、**macOS 10.15+**（使用 Swift 5.7+ 工具链编译；Xcode 会对上述系统做并发运行时回退）。不需要 async 时仍可使用带 `callback` 的 `method` 重载。
 
 ## 特性
 
@@ -46,7 +46,7 @@ Webnat 是用于 iOS / macOS 上 `WKWebView` 与 Native 通信的 Swift 库，�
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.4.0")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "2.0.0")
 ]
 ```
 
@@ -57,13 +57,13 @@ dependencies: [
 [CocoaPods 公有源（Trunk）](https://cocoapods.org/pods/Webnat)（在维护者已推送该版本之后）：
 
 ```ruby
-pod 'Webnat', '1.4.0'
+pod 'Webnat', '2.0.0'
 ```
 
 或直接引用本仓库：
 
 ```ruby
-pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.4.0'
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => 'v2.0.0'
 ```
 
 跟分支：
@@ -72,7 +72,7 @@ pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => 
 pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :branch => 'main'
 ```
 
-然后执行 `pod install`。使用 `:tag` 时请与 `Webnat.podspec` 的 `s.version` 对齐。维护者发版与校验见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+然后执行 `pod install`。使用 `:tag` 时请使用 `v` 加上 `Webnat.podspec` 的 `s.version`。维护者发版与校验见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ## 相关项目
 
@@ -81,6 +81,32 @@ pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :branch 
 | Web (JavaScript/TypeScript) | [webnat-web](https://github.com/auhgnayuo/webnat-web) |
 | Android (Kotlin) | [webnat-android](https://github.com/auhgnayuo/webnat-android) |
 | HarmonyOS (ArkTS) | [webnat-ohos](https://github.com/auhgnayuo/webnat-ohos) |
+
+## 2.0.0 数据约定与迁移
+
+业务参数、方法结果和通知只接受 JSON 可表达的数据：字符串、布尔值、有限数字、对象 / 字典、数组 / 列表和空值，递归遵循同一约定。类型签名只是承载这些数据，不意味着任意对象都可发送。非法数据明确失败，不通过字符串描述兜底，也不静默丢弃元素。
+
+Swift 使用 `Sendable?` 承载数据。字典 / 数组的嵌套空值使用
+`[String: Sendable?]` / `[Sendable?]`；接收 JSON null 和缺失参数统一得到 `nil`，不再得到 `NSNull`。
+字典中的空值键和数组中的空值位置都会保留，空字符串键也会保留。
+顶层参数 / 结果为 nil 时仍省略字段，嵌套 nil 编码为 JSON null。
+
+不接受 `Date`、`Data`、`Set`、自定义对象或直接传入的 `NSNull` / Foundation 容器；
+`Codable` / `Sendable` 并不代表对象自动符合 JSON 约定，请显式转换成字典和数组。
+框架在 Foundation / Objective-C block 边界处理自动桥接，业务数据使用上述 Swift 类型。
+
+`Message.toDictionary()` 现在会抛出序列化错误，调用时使用 `try`；`Message.from(dict:)` 遇到非法业务值拒绝整个消息。
+`Connection.attributes` 改为 `[String: Sendable?]?`，只包含 JSON 业务数据；
+原先的 `attributes["frameInfo"]` 移至独立的 `connection.frameInfo` 属性。
+
+```swift
+let param: [String: Sendable?] = [
+    "nickname": nil,
+    "items": [1, nil, 3] as [Sendable?]
+]
+webnat.raw(param, connection: connection)
+let dictionary = try Message.raw(to: connection.id, param: param).toDictionary()
+```
 
 ## 基本使用
 
@@ -212,3 +238,11 @@ func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
 ## 协议
 
 [MIT](LICENSE)
+
+## 共享回归契约
+
+五端自动消费同一份版本化报文 / 错误解析样例。说明见 `contracts/README.md`；测试门禁、SDK runner 和真机边界见 `contracts/CI.md`。
+
+## 发布
+
+本次统一为 2.0.0 / v2.0.0。请同步升级 Web SDK 与 Native 桥；手动发布命令与迁移说明见 `RELEASING.md`。

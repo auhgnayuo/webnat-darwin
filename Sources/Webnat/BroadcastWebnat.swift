@@ -12,7 +12,7 @@ import Foundation
 /// 用于监听广播事件的回调类型，监听函数会在主线程上以 block 调用方式被执行。
 ///
 /// - Parameters:
-///   - param: 广播推送的参数，可以是任意可序列化的对象，若无参数则为 `nil`
+///   - param: 广播推送的参数，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），若无参数则为 `nil`
 ///   - connection: 消息来源的连接对象
 public typealias BroadcastBlockListener = @MainActor @Sendable @convention(block) (_ param: Sendable?,_ connection: Connection) -> Void
 
@@ -126,7 +126,7 @@ final class BroadcastWebnat {
     ///
     /// - Parameters:
     ///   - name: 广播事件名称，用于标识事件类型
-    ///   - param: 广播参数，可以是任意可序列化的对象，可选。若无参数，则消息不携带 `param` 字段
+    ///   - param: 广播参数，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选。若无参数，则消息不携带 `param` 字段
     ///   - connection: 目标连接；为 `nil` 时不发送（调用方应保证传入有效连接）
     func broadcast(name: String, param: Sendable? = nil, connection: Connection? = nil) {
         guard let connection else {

@@ -11,6 +11,7 @@
 
 import XCTest
 import WebKit
+import JavaScriptCore
 @testable import Webnat
 
 // MARK: - 测试替身
@@ -72,7 +73,7 @@ private final class Harness {
 
     /// 模拟 Web 端发来一条协议消息。
     func web(_ message: Message) {
-        let fake = FakeScriptMessage(body: message.toDictionary(), webView: webView)
+        let fake = FakeScriptMessage(body: message.dictionaryForTest(), webView: webView)
         webnat.userContentController(webView.configuration.userContentController, didReceive: fake)
     }
 
@@ -88,8 +89,11 @@ private final class Harness {
         let prefix = "window.__web_webnat__.receive(..."
         return webView.scripts.compactMap { script in
             guard script.hasPrefix(prefix), script.hasSuffix(")") else { return nil }
-            let json = String(script.dropFirst(prefix.count).dropLast())
-            guard let data = json.data(using: .utf8),
+            let expression = String(script.dropFirst(prefix.count).dropLast())
+            guard expression.hasPrefix("JSON.parse("), expression.hasSuffix(")"),
+                  let literal = String(expression.dropFirst("JSON.parse(".count).dropLast()).data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: literal, options: .fragmentsAllowed) as? String,
+                  let data = json.data(using: .utf8),
                   let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
             return array.first
         }
@@ -169,12 +173,40 @@ final class SendFailureTests: XCTestCase {
         XCTAssertTrue(h.sent.isEmpty)
     }
 
+    func testConnectionMetadataRemainsJsonCompatibleAndFrameInfoIsSeparate() throws {
+        let h = Harness()
+        let payload: [String: Sendable?] = ["null": nil, "items": [1, nil] as [Sendable?]]
+        h.web(Message.open(from: "meta", param: payload))
+        let connection = try XCTUnwrap(h.webnat.connections["meta"])
+        let attributes = try XCTUnwrap(connection.attributes)
+        XCTAssertTrue(attributes.keys.contains("null")); XCTAssertNil(attributes["null"]!)
+        XCTAssertFalse(attributes.keys.contains("frameInfo")); XCTAssertTrue(connection.frameInfo != nil)
+        h.webnat.raw(attributes, connection: connection)
+        let sent = try XCTUnwrap(h.sent.last?["raw"] as? [String: Any])
+        XCTAssertTrue((sent["param"] as? [String: Any])?["null"] is NSNull)
+        h.webnat.webViewWebContentProcessDidTerminate()
+    }
+
+    func testJavaScriptTransportPreservesProtoKeysAndUnicodeInTheRealJSEngine() throws {
+        let h = Harness(); let connection = h.open()
+        let payload: [String: Sendable?] = ["__proto__": ["safe": true], "text": "你好 😀\n\"\u{2028}\u{2029}"]
+        h.webnat.raw(payload, connection: connection)
+        let script = try XCTUnwrap(h.webView.scripts.last)
+        let context = try XCTUnwrap(JSContext())
+        context.evaluateScript("var seen; var window = {__web_webnat__: {receive: function(m) {seen=m;}}};")
+        context.evaluateScript(script)
+        XCTAssertTrue(context.exception == nil)
+        XCTAssertTrue(context.evaluateScript("Object.prototype.hasOwnProperty.call(seen.raw.param, '__proto__') && Object.getPrototypeOf(seen.raw.param) === Object.prototype && seen.raw.param.__proto__.safe === true")?.toBool() == true)
+        XCTAssertEqual(context.evaluateScript("seen.raw.param.text")?.toString(), "你好 😀\n\"\u{2028}\u{2029}")
+        h.webnat.webViewWebContentProcessDidTerminate()
+    }
+
     func testSerializableValuesAreStillDelivered() {
         let h = Harness()
         let conn = h.open()
-        let param: [String: Sendable] = [
+        let param: [String: Sendable?] = [
             "int": 1, "int64": Int64(2), "uint": UInt(3), "double": 1.5, "float": Float(2.5),
-            "bool": true, "string": "x", "null": NSNull(), "array": [1, "two", 3.0], "object": ["k": "v"],
+            "bool": true, "string": "x", "null": nil, "array": [1, "two", 3.0], "object": ["k": "v"],
         ]
         h.webnat.method("m", param: param, callback: { _, _ in }, connection: conn)
         let invoke = h.sent.last?["invoke"] as? [String: Any]
@@ -291,7 +323,7 @@ final class ReplyFallbackTests: XCTestCase {
             completion?(nil)
         }
         rpc.on(name: "m") { _, callback, _, _ in
-            callback(Date(), nil)
+            callback("valid result", nil)
             return {}
         }
         rpc.onConnectionReceive(connection: conn, message: invokeFromWeb("c", id: "i", method: "m"))
@@ -305,7 +337,7 @@ final class ReplyFallbackTests: XCTestCase {
         XCTAssertEqual(attempts.value, 2, "一次结果回复 + 一次降级的错误回复")
         XCTAssertEqual(sentLog.value.count, 1)
         XCTAssertEqual(sentLog.value.first?.reply?.id, "i")
-        let error = sentLog.value.first?.reply?.error as? [String: Sendable]
+        let error = sentLog.value.first?.reply?.error as? [String: Sendable?]
         XCTAssertEqual(error?["code"] as? Int, WebnatErrorCode.serializationFailed)
     }
 

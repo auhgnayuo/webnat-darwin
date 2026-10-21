@@ -82,26 +82,27 @@ extension NSError {
             ])
         }
         
-        let code = {
-            // 支持多种常见 code 字段变体
-            let v = obj["code"] ?? obj["errcode"] ?? obj["errCode"] ?? obj["errorcode"] ?? obj["errorCode"]
-            if let v = v as? Int {
-                return v
-            }
-            if let v = v as? String {
-                return Int(v) ?? WebnatErrorCode.unknown
-            }
-            return WebnatErrorCode.unknown
-        }()
-        
-        let msg = {
-            // 支持多种常见 message/msg 字段变体
-            if let v = (obj["message"] ?? obj["msg"] ?? obj["errmsg"] ?? obj["errMsg"] ?? obj["errormsg"] ?? obj["errorMsg"] ?? obj["errormessage"] ?? obj["errorMessage"]) {
-                return "\(v)"
-            }
-            return "Unknown Error"
-        }()
-        
+        func first(_ keys: [String]) -> Any? {
+            for key in keys where obj.keys.contains(key) { return obj[key] }
+            return nil
+        }
+        let rawCode = try? fromJsonValue(first(["code", "errcode", "errCode", "errorcode", "errorCode"]))
+        var code = WebnatErrorCode.unknown
+        if let number = rawCode as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() {
+            let value = number.doubleValue
+            if value.isFinite && value.rounded(.towardZero) == value && value >= -2147483648 && value <= 2147483647 { code = Int(value) }
+        } else if let string = rawCode as? String,
+                  string.range(of: "^[+-]?[0-9]+$", options: .regularExpression) != nil,
+                  let number = Int(string), number >= -2147483648 && number <= 2147483647 {
+            code = number
+        }
+        let rawMessage = try? fromJsonValue(first(["message", "msg", "errmsg", "errMsg", "errormsg", "errorMsg", "errormessage", "errorMessage"]))
+        let msg: String
+        if let string = rawMessage as? String { msg = string }
+        else if let number = rawMessage as? NSNumber {
+            msg = CFGetTypeID(number) == CFBooleanGetTypeID() ? (number.boolValue ? "true" : "false") : number.stringValue
+        } else { msg = "Unknown Error" }
+
         return NSError(domain: WebnatErrorDomain, code: code, userInfo: [
             NSLocalizedDescriptionKey: msg
         ])

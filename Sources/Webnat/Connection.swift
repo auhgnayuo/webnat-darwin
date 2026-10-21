@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import WebKit
 
 /// 消息发送完成回调类型定义
 ///
@@ -51,8 +52,12 @@ public class Connection: NSObject, @unchecked Sendable {
     /// 连接的元数据
     ///
     /// 在连接建立（open）时由 Web 端传递，包含连接的附加信息
-    /// 例如：origin（来源）、isMainframe（是否为主框架）、frameInfo: WKFrameInfo
-    public let attributes: [String: Any]?
+    /// 例如：origin（来源）、isMainframe（是否为主框架）。值遵循 Param 的 JSON 数据约定。
+    /// WebKit 原生框架信息放在 frameInfo，不混入可序列化的 attributes。
+    public let attributes: [String: Sendable?]?
+
+    /// 建立连接时的 WebKit 框架信息；不属于 JSON 业务数据。
+    public let frameInfo: WKFrameInfo?
     
     /// 当前连接的界面URL
     ///
@@ -77,10 +82,11 @@ public class Connection: NSObject, @unchecked Sendable {
     ///   - attributes: 连接元数据，例如 source origin、frame 类型等，可以为 nil
     ///   - url: 当前界面的url
     ///   - sendMessage: 消息发送函数，负责具体实现消息发送逻辑的闭包
-    init(id: String, attributes: [String: Any]?, url: URL?, sendMessage: @escaping SendMessage) {
+    init(id: String, attributes: [String: Sendable?]?, url: URL?, frameInfo: WKFrameInfo? = nil, sendMessage: @escaping SendMessage) {
         self.id = id
         self.attributes = attributes
         self.url = url
+        self.frameInfo = frameInfo
         self.sendMessage = sendMessage
         super.init()
     }

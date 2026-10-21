@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-21
+
+This is a coordinated **major / breaking release** across Web, Electron, Darwin, Android and OHOS. Upgrade both sides of the bridge together; migration and manual publishing instructions are in `RELEASING.md`. Contract fixtures v1 are frozen for this release.
+
+### Shared contract / regression gates
+
+- Added versioned golden message, rejection and error fixtures shared by all five implementations, digest verification and a cross-repository drift/interop gate.
+- Unified error aliases, code 0, signed 32-bit / whole-string parsing and empty/null message behavior. Web errors now inherit Error.
+- PR test workflows now execute tests rather than build-only checks. OHOS SDK execution requires an approved isolated self-hosted runner; device tests remain distinct from local tests.
+
+- Native-to-Web scripts now parse quoted JSON text before receive instead of evaluating JSON as JavaScript object literals. This preserves __proto__ data fields and keeps the strict Web decoder compatible.
+
+### Changed (Breaking)
+
+- Business payloads now decode to native Swift nullable dictionaries / arrays (`[String: Sendable?]` / `[Sendable?]`); JSON null and missing fields become nil, with nested keys and positions preserved. NSNull no longer reaches business callbacks.
+- `Message.toDictionary()` now throws for invalid JSON business values. Date, Data, Set, custom objects, direct NSNull / Foundation containers, non-string keys and non-finite numbers are rejected. Decoder failures reject the whole message instead of skipping unknown elements.
+- `Connection.attributes` is now `[String: Sendable?]?` and contains JSON data only. Native WebKit metadata moved from `attributes["frameInfo"]` to `Connection.frameInfo`.
+
+### Fixed
+
+- A reply with `error: null` is now successful instead of losing its result and producing an unknown error.
+- Normalize automatic Objective-C block bridging of method results / notifications before encoding without silently coercing invalid objects.
+
+### Refactored
+
+- Moved recursive JSON encoding / decoding into standalone `toJsonValue` / `fromJsonValue` helpers, retaining integer precision and numeric / Boolean distinction.
+
+### Tests
+
+- Added shared-contract regression coverage for every message payload, nullable containers, illegal values, cycles, business callbacks, metadata and RPC error handling. Updated old NSNull / skip-policy expectations.
+
+### Fixed
+
+- Preserve JSON numeric `0`/`1` as numbers instead of decoding them as booleans. Distinguish CFBoolean before numeric NSNumber bridging, retain integral precision, and cover nested JSONSerialization round trips.
+
 ## [1.4.0] - 2026-10-13
 
 ### Added

@@ -1,0 +1,1194 @@
+{
+  "version": 1,
+  "errorPolicy": {
+    "code": "signed 32-bit integer; ASCII whole numeric strings without whitespace; boolean/fraction/overflow rejected",
+    "aliases": "first present key wins, canonical null does not fall through",
+    "message": "strings preserved (including empty); finite primitive values described; null/missing/containers use Unknown Error"
+  },
+  "errors": [
+    {
+      "id": "E001-null",
+      "input": null,
+      "expected": null
+    },
+    {
+      "id": "E002-defaults",
+      "input": {},
+      "expected": {
+        "code": -1,
+        "message": "Unknown Error"
+      }
+    },
+    {
+      "id": "E003-standard",
+      "input": {
+        "code": -1001,
+        "message": "slow"
+      },
+      "expected": {
+        "code": -1001,
+        "message": "slow"
+      }
+    },
+    {
+      "id": "E004-zero",
+      "input": {
+        "code": 0,
+        "message": "zero"
+      },
+      "expected": {
+        "code": 0,
+        "message": "zero"
+      }
+    },
+    {
+      "id": "E005-aliases",
+      "input": {
+        "errCode": "123",
+        "errMsg": "denied"
+      },
+      "expected": {
+        "code": 123,
+        "message": "denied"
+      }
+    },
+    {
+      "id": "E006-sign",
+      "input": {
+        "errorcode": "+12",
+        "errorMessage": "plus"
+      },
+      "expected": {
+        "code": 12,
+        "message": "plus"
+      }
+    },
+    {
+      "id": "E007-partial-string",
+      "input": {
+        "code": "12junk",
+        "message": "partial"
+      },
+      "expected": {
+        "code": -1,
+        "message": "partial"
+      }
+    },
+    {
+      "id": "E008-fraction",
+      "input": {
+        "code": 1.5,
+        "message": "fraction"
+      },
+      "expected": {
+        "code": -1,
+        "message": "fraction"
+      }
+    },
+    {
+      "id": "E009-overflow",
+      "input": {
+        "code": 2147483648,
+        "message": "overflow"
+      },
+      "expected": {
+        "code": -1,
+        "message": "overflow"
+      }
+    },
+    {
+      "id": "E010-boolean-code",
+      "input": {
+        "code": true,
+        "message": "boolean"
+      },
+      "expected": {
+        "code": -1,
+        "message": "boolean"
+      }
+    },
+    {
+      "id": "E011-null-canonical",
+      "input": {
+        "code": null,
+        "errCode": 123,
+        "message": null,
+        "errMsg": "alias"
+      },
+      "expected": {
+        "code": -1,
+        "message": "Unknown Error"
+      }
+    },
+    {
+      "id": "E012-empty-message",
+      "input": {
+        "code": 7,
+        "message": ""
+      },
+      "expected": {
+        "code": 7,
+        "message": ""
+      }
+    },
+    {
+      "id": "E013-number-message",
+      "input": {
+        "code": 7,
+        "message": 0
+      },
+      "expected": {
+        "code": 7,
+        "message": "0"
+      }
+    },
+    {
+      "id": "E014-bool-message",
+      "input": {
+        "code": 7,
+        "message": false
+      },
+      "expected": {
+        "code": 7,
+        "message": "false"
+      }
+    },
+    {
+      "id": "E015-container-message",
+      "input": {
+        "code": 7,
+        "message": []
+      },
+      "expected": {
+        "code": 7,
+        "message": "Unknown Error"
+      }
+    },
+    {
+      "id": "E016-leading-space",
+      "input": {
+        "code": " 12",
+        "message": "space"
+      },
+      "expected": {
+        "code": -1,
+        "message": "space"
+      }
+    },
+    {
+      "id": "E017-minimum",
+      "input": {
+        "code": "-2147483648",
+        "message": "min"
+      },
+      "expected": {
+        "code": -2147483648,
+        "message": "min"
+      }
+    },
+    {
+      "id": "E018-maximum",
+      "input": {
+        "code": "2147483647",
+        "message": "max"
+      },
+      "expected": {
+        "code": 2147483647,
+        "message": "max"
+      }
+    },
+    {
+      "id": "E019-priority",
+      "input": {
+        "code": 4,
+        "errCode": 9,
+        "message": "first",
+        "errMsg": "second"
+      },
+      "expected": {
+        "code": 4,
+        "message": "first"
+      }
+    },
+    {
+      "id": "E020-unsupported-case",
+      "input": {
+        "Code": 4,
+        "Message": "case"
+      },
+      "expected": {
+        "code": -1,
+        "message": "Unknown Error"
+      }
+    },
+    {
+      "id": "E021-decimal-string",
+      "input": {
+        "code": "12.0",
+        "message": "decimal"
+      },
+      "expected": {
+        "code": -1,
+        "message": "decimal"
+      }
+    },
+    {
+      "id": "E022-empty-code",
+      "input": {
+        "code": "",
+        "message": "empty"
+      },
+      "expected": {
+        "code": -1,
+        "message": "empty"
+      }
+    },
+    {
+      "id": "E023-terminal-newline",
+      "input": {
+        "code": "12\n",
+        "message": "newline"
+      },
+      "expected": {
+        "code": -1,
+        "message": "newline"
+      }
+    },
+    {
+      "id": "E024-terminal-space",
+      "input": {
+        "code": "12 ",
+        "message": "space"
+      },
+      "expected": {
+        "code": -1,
+        "message": "space"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "id": "M001-open",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "open": {
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "open": {
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      }
+    },
+    {
+      "id": "M002-close",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "close": {
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "close": {
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      }
+    },
+    {
+      "id": "M003-raw",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "raw": {
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "raw": {
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      }
+    },
+    {
+      "id": "M004-broadcast",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "broadcast": {
+          "name": "event",
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "broadcast": {
+          "name": "event",
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      }
+    },
+    {
+      "id": "M005-invoke",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "invoke": {
+          "id": "call",
+          "method": "echo",
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "invoke": {
+          "id": "call",
+          "method": "echo",
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      }
+    },
+    {
+      "id": "M006-reply",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "reply": {
+          "id": "call",
+          "result": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "reply": {
+          "id": "call",
+          "result": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      }
+    },
+    {
+      "id": "M007-notify",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "notify": {
+          "id": "call",
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "notify": {
+          "id": "call",
+          "param": {
+            "nil": null,
+            "items": [
+              0,
+              1,
+              true,
+              false,
+              null,
+              {
+                "__proto__": {
+                  "safe": true
+                }
+              }
+            ],
+            "": "",
+            "text": "你好 😀\n\""
+          }
+        }
+      }
+    },
+    {
+      "id": "M008-abort",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "abort": {
+          "id": "call"
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "abort": {
+          "id": "call"
+        }
+      }
+    },
+    {
+      "id": "M020-null-open",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "open": {
+          "param": null
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "open": {}
+      }
+    },
+    {
+      "id": "M021-null-close",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "close": {
+          "param": null
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "close": {}
+      }
+    },
+    {
+      "id": "M022-null-raw",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "raw": {
+          "param": null
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "raw": {}
+      }
+    },
+    {
+      "id": "M023-null-broadcast",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "broadcast": {
+          "name": "event",
+          "param": null
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "broadcast": {
+          "name": "event"
+        }
+      }
+    },
+    {
+      "id": "M024-null-invoke",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "invoke": {
+          "id": "call",
+          "method": "echo",
+          "param": null
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "invoke": {
+          "id": "call",
+          "method": "echo"
+        }
+      }
+    },
+    {
+      "id": "M025-null-reply",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "reply": {
+          "id": "call",
+          "result": null,
+          "error": null
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "reply": {
+          "id": "call"
+        }
+      }
+    },
+    {
+      "id": "M026-null-notify",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "notify": {
+          "id": "call",
+          "param": null
+        }
+      },
+      "canonical": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "notify": {
+          "id": "call"
+        }
+      }
+    }
+  ],
+  "rejectedMessages": [
+    {
+      "id": "R-wrong-magic",
+      "input": {
+        "magic": "OTHER",
+        "from": "peer",
+        "to": "native",
+        "raw": {}
+      }
+    },
+    {
+      "id": "R-missing-from",
+      "input": {
+        "magic": "WEBNAT",
+        "to": "native",
+        "raw": {}
+      }
+    },
+    {
+      "id": "R-empty-from",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "",
+        "to": "native",
+        "raw": {}
+      }
+    },
+    {
+      "id": "R-numeric-from",
+      "input": {
+        "magic": "WEBNAT",
+        "from": 123,
+        "to": "native",
+        "raw": {}
+      }
+    },
+    {
+      "id": "R-open-null",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "open": null
+      }
+    },
+    {
+      "id": "R-open-array",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "open": []
+      }
+    },
+    {
+      "id": "R-open-string",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "open": "invalid"
+      }
+    },
+    {
+      "id": "R-close-null",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "close": null
+      }
+    },
+    {
+      "id": "R-close-array",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "close": []
+      }
+    },
+    {
+      "id": "R-close-string",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "close": "invalid"
+      }
+    },
+    {
+      "id": "R-raw-null",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "raw": null
+      }
+    },
+    {
+      "id": "R-raw-array",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "raw": []
+      }
+    },
+    {
+      "id": "R-raw-string",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "raw": "invalid"
+      }
+    },
+    {
+      "id": "R-broadcast-null",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "broadcast": null
+      }
+    },
+    {
+      "id": "R-broadcast-array",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "broadcast": []
+      }
+    },
+    {
+      "id": "R-broadcast-string",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "broadcast": "invalid"
+      }
+    },
+    {
+      "id": "R-invoke-null",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "invoke": null
+      }
+    },
+    {
+      "id": "R-invoke-array",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "invoke": []
+      }
+    },
+    {
+      "id": "R-invoke-string",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "invoke": "invalid"
+      }
+    },
+    {
+      "id": "R-reply-null",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "reply": null
+      }
+    },
+    {
+      "id": "R-reply-array",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "reply": []
+      }
+    },
+    {
+      "id": "R-reply-string",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "reply": "invalid"
+      }
+    },
+    {
+      "id": "R-notify-null",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "notify": null
+      }
+    },
+    {
+      "id": "R-notify-array",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "notify": []
+      }
+    },
+    {
+      "id": "R-notify-string",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "notify": "invalid"
+      }
+    },
+    {
+      "id": "R-abort-null",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "abort": null
+      }
+    },
+    {
+      "id": "R-abort-array",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "abort": []
+      }
+    },
+    {
+      "id": "R-abort-string",
+      "input": {
+        "magic": "WEBNAT",
+        "from": "peer",
+        "to": "native",
+        "abort": "invalid"
+      }
+    }
+  ],
+  "invalidValues": [
+    {
+      "id": "J-nan",
+      "kind": "nan",
+      "encodeCode": -1012,
+      "decodeCode": -1011
+    },
+    {
+      "id": "J-positive-infinity",
+      "kind": "positive-infinity",
+      "encodeCode": -1012,
+      "decodeCode": -1011
+    },
+    {
+      "id": "J-negative-infinity",
+      "kind": "negative-infinity",
+      "encodeCode": -1012,
+      "decodeCode": -1011
+    },
+    {
+      "id": "J-object-cycle",
+      "kind": "object-cycle",
+      "encodeCode": -1012,
+      "decodeCode": -1011
+    },
+    {
+      "id": "J-array-cycle",
+      "kind": "array-cycle",
+      "encodeCode": -1012,
+      "decodeCode": -1011
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "C01",
+      "description": "handler throws -> error reply",
+      "appliesTo": [
+        "web",
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    },
+    {
+      "id": "C02",
+      "description": "invalid send fails immediately with SERIALIZATION_FAILED",
+      "appliesTo": [
+        "web",
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    },
+    {
+      "id": "C03",
+      "description": "invalid result yields one error reply",
+      "appliesTo": [
+        "web",
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    },
+    {
+      "id": "C04",
+      "description": "close ends pending calls and cancels handlers",
+      "appliesTo": [
+        "web",
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    },
+    {
+      "id": "C05",
+      "description": "synchronous completion leaves no hooks",
+      "appliesTo": [
+        "web",
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    },
+    {
+      "id": "C06",
+      "description": "JSON parse transport preserves __proto__ and Unicode",
+      "appliesTo": [
+        "web",
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    },
+    {
+      "id": "B01",
+      "description": "first meaningful signal wins and aborts losers",
+      "appliesTo": [
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    },
+    {
+      "id": "B02",
+      "description": "closed/unimplemented eliminate; closed wins final aggregation",
+      "appliesTo": [
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    },
+    {
+      "id": "B03",
+      "description": "group timeout/cancel abort every child",
+      "appliesTo": [
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    },
+    {
+      "id": "L01",
+      "description": "heartbeat reference counting and deterministic delay",
+      "appliesTo": [
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    },
+    {
+      "id": "L02",
+      "description": "page/process end is idempotent and permits reopen",
+      "appliesTo": [
+        "electron",
+        "darwin",
+        "ohos",
+        "android"
+      ]
+    }
+  ]
+}

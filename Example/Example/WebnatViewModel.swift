@@ -96,10 +96,10 @@ class WebnatViewModel: ObservableObject {
             
             // 模拟异步处理
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                let result: [String: Any] = [
+                let result: [String: Sendable?] = [
                     "success": true,
                     "result": "Method 调用成功",
-                    "receivedParam": param ?? NSNull()
+                    "receivedParam": param as Sendable?
                 ]
                 callback(result, nil)
             }

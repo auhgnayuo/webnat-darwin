@@ -15,7 +15,7 @@ import WebKit
 final class MessageSerializationTests: XCTestCase {
     func testOpenRoundTrip() {
         let original = Message.open(from: "conn-a", param: ["n": 42, "s": "hi"])
-        let dict = original.toDictionary()
+        let dict = original.dictionaryForTest()
         let parsed = Message.from(dict: dict)
         XCTAssertNotNil(parsed)
         XCTAssertEqual(parsed?.from, "conn-a")
@@ -24,40 +24,40 @@ final class MessageSerializationTests: XCTestCase {
 
     func testCloseRoundTrip() {
         let original = Message.close(from: "conn-a", param: ["reason": "bye"])
-        XCTAssertNotNil(Message.from(dict: original.toDictionary()))
+        XCTAssertNotNil(Message.from(dict: original.dictionaryForTest()))
     }
 
     func testRawRoundTrip() {
         let original = Message.raw(to: "conn-a", param: ["x": true])
-        let parsed = Message.from(dict: original.toDictionary())
+        let parsed = Message.from(dict: original.dictionaryForTest())
         XCTAssertNotNil(parsed?.raw)
     }
 
     func testBroadcastRoundTrip() {
         let original = Message.broadcast(to: "conn-a", name: "evt", param: [1, 2])
-        let parsed = Message.from(dict: original.toDictionary())
+        let parsed = Message.from(dict: original.dictionaryForTest())
         XCTAssertEqual(parsed?.broadcast?.name, "evt")
     }
 
     func testInvokeReplyNotifyAbortRoundTrip() {
         let invoke = Message.invoke(to: "peer", id: "i1", method: "m", param: ["k": "v"])
-        XCTAssertNotNil(Message.from(dict: invoke.toDictionary())?.invoke)
+        XCTAssertNotNil(Message.from(dict: invoke.dictionaryForTest())?.invoke)
 
         let reply = Message.reply(to: "peer", id: "i1", result: "ok")
-        XCTAssertNotNil(Message.from(dict: reply.toDictionary())?.reply)
+        XCTAssertNotNil(Message.from(dict: reply.dictionaryForTest())?.reply)
 
         let replyErr = Message.reply(to: "peer", id: "i1", error: NSError.unimplemented("x").toJson())
-        XCTAssertNotNil(Message.from(dict: replyErr.toDictionary())?.reply?.error)
+        XCTAssertNotNil(Message.from(dict: replyErr.dictionaryForTest())?.reply?.error)
 
         let notify = Message.notify(to: "peer", id: "i1", param: 10)
-        XCTAssertNotNil(Message.from(dict: notify.toDictionary())?.notify)
+        XCTAssertNotNil(Message.from(dict: notify.dictionaryForTest())?.notify)
 
         let abort = Message.abort(to: "peer", id: "i1")
-        XCTAssertNotNil(Message.from(dict: abort.toDictionary())?.abort)
+        XCTAssertNotNil(Message.from(dict: abort.dictionaryForTest())?.abort)
     }
 
     func testFromRejectsWrongMagic() {
-        var dict = Message.open(from: "x").toDictionary()
+        var dict = Message.open(from: "x").dictionaryForTest()
         dict["magic"] = "NOPE"
         XCTAssertNil(Message.from(dict: dict))
     }
@@ -725,7 +725,7 @@ final class BroadcastMethodCallTests: XCTestCase {
 
 @MainActor
 final class MessageEdgeCaseTests: XCTestCase {
-    func testEmptyStringFromStillParsesWithBroadcast() {
+    func testEmptyStringFromIsRejectedBySharedContract() {
         let dict: [String: Any] = [
             "magic": Message.MAGIC,
             "from": "",
@@ -733,13 +733,12 @@ final class MessageEdgeCaseTests: XCTestCase {
             "broadcast": ["name": "e"],
         ]
         let m = Message.from(dict: dict)
-        XCTAssertNotNil(m)
-        XCTAssertEqual(m?.broadcast?.name, "e")
+        XCTAssertNil(m)
     }
 
     func testReplyWithBothResultAndErrorRoundTrip() {
         let m = Message(from: "p", to: Message.NATIVE_UUID, reply: Reply(id: "r", result: 1, error: "e"))
-        let parsed = Message.from(dict: m.toDictionary())
+        let parsed = Message.from(dict: m.dictionaryForTest())
         XCTAssertNotNil(parsed?.reply)
         XCTAssertEqual(parsed?.reply?.result as? Int, 1)
         XCTAssertNotNil(parsed?.reply?.error)
@@ -1094,22 +1093,50 @@ final class ErrorTests: XCTestCase {
     }
 }
 
-// MARK: - Message decode (NSNull placeholder + skip semantics)
+// MARK: - Message decode (native nil + strict JSON semantics)
 
 @MainActor
 final class MessageDecodeTests: XCTestCase {
     func testDecodePrimitiveAndNestedTypes() {
         let original = Message.invoke(to: "p", id: "i", method: "m", param: ["s": "x", "n": 1, "b": true, "arr": [1, 2.5, "z"]])
-        let parsed = Message.from(dict: original.toDictionary())
-        let p = parsed?.invoke?.param as? [String: Sendable]
+        let parsed = Message.from(dict: original.dictionaryForTest())
+        let p = parsed?.invoke?.param as? [String: Sendable?]
         XCTAssertEqual(p?["s"] as? String, "x")
         XCTAssertEqual(p?["n"] as? Int, 1)
         XCTAssertEqual(p?["b"] as? Bool, true)
-        let arr = p?["arr"] as? [Sendable]
+        let arr = p?["arr"] as? [Sendable?]
         XCTAssertEqual(arr?.count, 3)
     }
 
-    func testDecodeNSNullAtTopLevelKeptAsPlaceholder() {
+    func testJSONSerializationNumbersDoNotBecomeBooleans() throws {
+        let data = Data("{\"zero\":0,\"one\":1,\"negative\":-1,\"fraction\":0.5,\"large\":9007199254740993,\"true\":true,\"false\":false,\"array\":[0,1,true,false],\"null\":null}".utf8)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var envelope = Message.invoke(to: "p", id: "i", method: "m").dictionaryForTest()
+        envelope["invoke"] = ["id": "i", "method": "m", "param": json]
+        let parsed = try XCTUnwrap(Message.from(dict: envelope)?.invoke?.param as? [String: Sendable?])
+        for key in ["zero", "one", "negative", "fraction", "large"] {
+            let number = try XCTUnwrap(parsed[key] as? NSNumber)
+            XCTAssertNotEqual(CFGetTypeID(number), CFBooleanGetTypeID(), key)
+        }
+        XCTAssertEqual((parsed["zero"] as? NSNumber)?.intValue, 0)
+        XCTAssertEqual((parsed["one"] as? NSNumber)?.intValue, 1)
+        XCTAssertEqual((parsed["large"] as? NSNumber)?.int64Value, 9007199254740993)
+        XCTAssertEqual(CFGetTypeID(try XCTUnwrap(parsed["true"] as? NSNumber)), CFBooleanGetTypeID())
+        XCTAssertEqual(CFGetTypeID(try XCTUnwrap(parsed["false"] as? NSNumber)), CFBooleanGetTypeID())
+        XCTAssertTrue(parsed.keys.contains("null"))
+        XCTAssertNil(parsed["null"]!)
+        let roundTrip = try XCTUnwrap(Message.from(dict: envelope)?.dictionaryForTest()["invoke"] as? [String: Any])
+        let encoded = try JSONSerialization.data(withJSONObject: roundTrip["param"] as Any)
+        let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertNotEqual(CFGetTypeID(try XCTUnwrap(decoded["one"] as? NSNumber)), CFBooleanGetTypeID())
+        let array = try XCTUnwrap(decoded["array"] as? [NSNumber])
+        XCTAssertNotEqual(CFGetTypeID(array[0]), CFBooleanGetTypeID())
+        XCTAssertNotEqual(CFGetTypeID(array[1]), CFBooleanGetTypeID())
+        XCTAssertEqual(CFGetTypeID(array[2]), CFBooleanGetTypeID())
+        XCTAssertEqual(CFGetTypeID(array[3]), CFBooleanGetTypeID())
+    }
+
+    func testDecodeNSNullAtTopLevelBecomesNil() {
         let dict: [String: Any] = [
             "magic": Message.MAGIC,
             "from": "x",
@@ -1118,10 +1145,10 @@ final class MessageDecodeTests: XCTestCase {
         ]
         let m = Message.from(dict: dict)
         XCTAssertNotNil(m?.broadcast)
-        XCTAssertTrue(m?.broadcast?.param is NSNull, "NSNull 应作为 Sendable 占位保留")
+        XCTAssertNil(m?.broadcast?.param)
     }
 
-    func testDecodeArrayContainingNSNullKeepsItAsPlaceholder() {
+    func testDecodeArrayContainingNSNullPreservesNilPosition() {
         let dict: [String: Any] = [
             "magic": Message.MAGIC,
             "from": "x",
@@ -1129,38 +1156,21 @@ final class MessageDecodeTests: XCTestCase {
             "broadcast": ["name": "e", "param": [1, NSNull(), "z"]],
         ]
         let m = Message.from(dict: dict)
-        let arr = m?.broadcast?.param as? [Sendable]
+        let arr = m?.broadcast?.param as? [Sendable?]
         XCTAssertEqual(arr?.count, 3)
-        XCTAssertTrue(arr?[1] is NSNull)
+        XCTAssertNil(arr?[1])
     }
 
-    func testDecodeArraySkipsUnknownTypeButKeepsValid() {
-        // Date 不是 JSON 类型，应在数组中被跳过（与 NSNull 的「保留占位」行为不同）
-        let dict: [String: Any] = [
-            "magic": Message.MAGIC,
-            "from": "x",
-            "to": "y",
-            "broadcast": ["name": "e", "param": [1, Date(), "z"]],
-        ]
-        let m = Message.from(dict: dict)
-        let arr = m?.broadcast?.param as? [Sendable]
-        XCTAssertEqual(arr?.count, 2, "未识别类型应跳过，而不是让整个数组失败")
-        XCTAssertEqual(arr?[0] as? Int, 1)
-        XCTAssertEqual(arr?[1] as? String, "z")
+    func testDecodeArrayRejectsUnknownTypeWithoutDroppingElements() {
+        let dict: [String: Any] = ["magic": Message.MAGIC, "from": "x", "to": "y",
+                                   "broadcast": ["name": "e", "param": [1, Date(), "z"]]]
+        XCTAssertNil(Message.from(dict: dict))
     }
 
-    func testDecodeDictSkipsUnknownTypeButKeepsValid() {
-        let dict: [String: Any] = [
-            "magic": Message.MAGIC,
-            "from": "x",
-            "to": "y",
-            "broadcast": ["name": "e", "param": ["k1": 1, "k2": Date(), "k3": "z"]],
-        ]
-        let m = Message.from(dict: dict)
-        let p = m?.broadcast?.param as? [String: Sendable]
-        XCTAssertEqual(p?.count, 2)
-        XCTAssertEqual(p?["k1"] as? Int, 1)
-        XCTAssertEqual(p?["k3"] as? String, "z")
+    func testDecodeDictRejectsUnknownTypeWithoutDroppingFields() {
+        let dict: [String: Any] = ["magic": Message.MAGIC, "from": "x", "to": "y",
+                                   "broadcast": ["name": "e", "param": ["k1": 1, "k2": Date()]]]
+        XCTAssertNil(Message.from(dict: dict))
     }
 
     func testDecodeInvokeWithoutMethodIsDropped() {

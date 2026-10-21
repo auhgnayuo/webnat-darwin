@@ -1,6 +1,6 @@
 # Webnat
 
-[![Swift](https://img.shields.io/badge/Swift-5.5-orange.svg)](https://swift.org)
+[![Swift](https://img.shields.io/badge/Swift-5.7-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/Platform-iOS%2013%2B%20%7C%20macOS%2010.15%2B-lightgrey.svg)](https://developer.apple.com)
 [![SPM](https://img.shields.io/badge/SPM-Compatible-brightgreen.svg)](https://swift.org/package-manager)
 [![CocoaPods](https://img.shields.io/badge/CocoaPods-Git%20podspec-ff69b4.svg)](https://guides.cocoapods.org/syntax/podfile.html#pod)
@@ -17,14 +17,14 @@ A lightweight WebView–Native bridge for iOS and macOS, built on WebKit’s `WK
 
 | | Version |
 |--|--|
-| Swift | 5.5+ |
+| Swift | 5.7+ |
 | iOS | 13.0+ |
 | macOS | 10.15+ |
 | Xcode | 14+ recommended (Swift 6–friendly toolchains) |
 
 **Threading:** `Webnat` and related APIs are main-thread oriented (`@MainActor`). Call `initialize`, `of`, listeners, and sends from the main thread unless your app’s architecture already guarantees the same execution context as the web view.
 
-**Concurrency:** `async`/`await` method calls, `AsyncStream` broadcast listening, and related APIs use Swift concurrency, which this package targets at **iOS 13+** and **macOS 10.15+** (build with a Swift 5.5+ toolchain; Xcode applies the usual runtime back-deployment for these OS versions).
+**Concurrency:** `async`/`await` method calls, `AsyncStream` broadcast listening, and related APIs use Swift concurrency, which this package targets at **iOS 13+** and **macOS 10.15+** (build with a Swift 5.7+ toolchain; Xcode applies the usual runtime back-deployment for these OS versions).
 
 ## Features
 
@@ -46,7 +46,7 @@ Pin versions to a [Git tag](https://github.com/auhgnayuo/webnat-darwin/releases)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "1.4.0")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "2.0.0")
 ]
 ```
 
@@ -57,13 +57,13 @@ In Xcode: **File → Add Package Dependencies…** → enter `https://github.com
 From [CocoaPods trunk](https://cocoapods.org/pods/Webnat) (after the maintainer has pushed that version):
 
 ```ruby
-pod 'Webnat', '1.4.0'
+pod 'Webnat', '2.0.0'
 ```
 
 Or track this repository directly:
 
 ```ruby
-pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => '1.4.0'
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => 'v2.0.0'
 ```
 
 Track a branch:
@@ -72,7 +72,7 @@ Track a branch:
 pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :branch => 'main'
 ```
 
-Then `pod install`. For `:tag`, keep the tag aligned with `s.version` in `Webnat.podspec`. Maintainer checklist (lint, tagging): [CONTRIBUTING.md](./CONTRIBUTING.md).
+Then `pod install`. For `:tag`, use `v` followed by `s.version` for the tag in `Webnat.podspec`. Maintainer checklist (lint, tagging): [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Related projects
 
@@ -81,6 +81,34 @@ Then `pod install`. For `:tag`, keep the tag aligned with `s.version` in `Webnat
 | Web (JavaScript/TypeScript) | [webnat-web](https://github.com/auhgnayuo/webnat-web) |
 | Android (Kotlin) | [webnat-android](https://github.com/auhgnayuo/webnat-android) |
 | HarmonyOS (ArkTS) | [webnat-ohos](https://github.com/auhgnayuo/webnat-ohos) |
+
+## 2.0.0 Data Contract and Migration
+
+Payloads, method results, and notifications accept only JSON-compatible values: strings, booleans,
+finite numbers, string-keyed dictionaries, arrays, and nulls, recursively. `Sendable?` is a carrier,
+not a promise that any Sendable / Codable object can be encoded.
+
+Use `[String: Sendable?]` / `[Sendable?]` for nullable dictionary values / array elements.
+Incoming JSON null and missing payload fields both become native nil, never NSNull.
+Null dictionary keys and array positions are preserved, as are empty string keys.
+Top-level nil payloads / results still omit their fields; nested nil encodes as JSON null.
+
+Date, Data, Set, custom objects, and directly supplied NSNull / Foundation containers are rejected.
+Convert custom objects to dictionaries / arrays explicitly. Foundation / Objective-C block bridging
+is handled internally; invalid values are rejected, not stringified or silently dropped.
+
+`Message.toDictionary()` now throws: use `try`. Invalid decoded payloads cause `Message.from(dict:)`
+to reject the entire message. `Connection.attributes` is now `[String: Sendable?]?` and contains only
+JSON business data. Move access to `attributes["frameInfo"]` to the separate `connection.frameInfo` property.
+
+```swift
+let param: [String: Sendable?] = [
+    "nickname": nil,
+    "items": [1, nil, 3] as [Sendable?]
+]
+webnat.raw(param, connection: connection)
+let dictionary = try Message.raw(to: connection.id, param: param).toDictionary()
+```
 
 ## Usage
 
@@ -212,3 +240,11 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 ## License
 
 [MIT](LICENSE)
+
+## Shared regression contracts
+
+See `contracts/README.md` for versioned golden fixtures and `contracts/CI.md` for test gates and runner setup.
+
+## Release
+
+Manual release instructions and migration notes: `RELEASING.md`. Upgrade the Web SDK and native bridge together to 2.0.0.

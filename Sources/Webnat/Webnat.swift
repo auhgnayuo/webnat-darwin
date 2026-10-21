@@ -13,6 +13,12 @@ import WebKit
 /// 2. **Broadcast（广播）**：发布-订阅模式，支持事件通知
 /// 3. **Method（方法调用）**：RPC 模式，支持远程方法调用和返回值
 ///
+/// ## JSON 数据约定
+///
+/// 参数、结果和通知遵循 Param 的 JSON 数据约定；Sendable? 不代表任意对象可编码。
+/// JSON null / 缺失参数对外为 nil；嵌套空值使用 [String: Sendable?] / [Sendable?]，保留键和位置。
+/// 非法发送数据报 SERIALIZATION_FAILED；原始消息 / 广播等无完成回调的发送保持原有静默失败语义。
+///
 /// ## 使用示例
 ///
 /// ```swift
@@ -164,7 +170,7 @@ public class Webnat: NSObject {
     /// 如果同一个监听器引用已存在，则先移除旧的再添加新的。
     ///
     /// - Parameter listener: 消息监听回调
-    ///   - param: 接收到的消息内容，可以是任意可序列化的对象
+    ///   - param: 接收到的消息内容，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param）
     ///   - connection: 消息来源的连接对象
     ///
     /// ## 使用示例
@@ -203,7 +209,7 @@ public class Webnat: NSObject {
     /// 将消息包装为 Message 格式后发送到 Web 端。
     ///
     /// - Parameters:
-    ///   - raw: 消息体，可以是任意可序列化的对象（String、Int、Dictionary、Array 等），可选
+    ///   - raw: 消息体，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param）（String、Int、Dictionary、Array 等），可选
     ///   - connection: 目标连接，如果连接已关闭则不会发送
     ///
     /// ## 使用示例
@@ -225,7 +231,7 @@ public class Webnat: NSObject {
     /// - Parameters:
     ///   - name: 广播事件名称，用于标识不同的事件类型
     ///   - listener: 接收到广播时的回调函数
-    ///     - param: 广播携带的参数，可以是任意可序列化的对象，可选
+    ///     - param: 广播携带的参数，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
     ///     - connection: 消息来源的连接对象
     ///
     /// ## 使用示例
@@ -292,7 +298,7 @@ public class Webnat: NSObject {
     ///
     /// - Parameters:
     ///   - name: 广播事件名称，用于标识事件类型
-    ///   - param: 广播参数，可以是任意可序列化的对象，可选
+    ///   - param: 广播参数，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
     ///   - connection: 目标连接，如果为 `nil` 则广播到所有连接
     ///
     /// ## 使用示例
@@ -329,7 +335,7 @@ public class Webnat: NSObject {
     /// - Parameters:
     ///   - name: 方法名称，用于标识要处理的方法
     ///   - listener: 方法处理器回调
-    ///     - param: 方法调用时传入的参数，可以是任意可序列化的对象，可选
+    ///     - param: 方法调用时传入的参数，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
     ///     - callback: 方法执行完成后的回调，用于返回结果或错误
     ///       - result: 方法执行结果，成功时传入，失败时为 `nil`
     ///       - error: 错误信息，失败时传入，成功时为 `nil`
@@ -398,7 +404,7 @@ public class Webnat: NSObject {
     ///
     /// - Parameters:
     ///   - method: 要调用的方法名称
-    ///   - param: 方法参数，可以是任意可序列化的对象，可选
+    ///   - param: 方法参数，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
     ///   - timeout: 超时时间（秒），默认值为 `.greatestFiniteMagnitude`（表示永不超时，不会注册定时器）
     ///     有限且大于 `0` 时，超时后会自动取消调用并返回超时错误
     ///   - onNotification: 收到通知时的回调函数，用于接收方法执行过程中的进度或状态更新
@@ -473,13 +479,13 @@ public class Webnat: NSObject {
     ///
     /// - Parameters:
     ///   - method: 要调用的方法名称
-    ///   - param: 方法参数，可以是任意可序列化的对象，可选
+    ///   - param: 方法参数，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
     ///   - timeout: 超时时间（秒）。`nil`、非正数或非有限值（如 `.infinity`）均**不**注册超时定时器；仅有限且 `> 0` 时超时后会自动取消调用并抛出超时错误
     ///   - onNotification: 收到通知时的回调函数，用于接收方法执行过程中的进度或状态更新
     ///     - param: 通知内容，可以是进度信息、中间结果等
     ///   - connection: 目标连接。传入具体连接时只调用该连接；为 `nil` 时**广播**给当前所有连接
     ///     （主框架 + 所有 iframe），并按「谁先返回用谁的」裁决（详见回调版说明）
-    /// - Returns: 方法执行结果，可以是任意可序列化的对象，可选
+    /// - Returns: 方法执行结果，可以是 JSON 兼容的 Swift 数据（类型、嵌套空值和限制见 Param），可选
     /// - Throws: 方法执行错误，包括：
     ///   - 超时错误（`WebnatErrorCode.timeout`）
     ///   - 取消错误（`WebnatErrorCode.cancelled`）
@@ -603,11 +609,10 @@ public class Webnat: NSObject {
             }
             
             // 提取连接元数据
-            var attributes: [String: Any] = [:]
-            if let param = open.param as? [String: Any] {
+            var attributes: [String: Sendable?] = [:]
+            if let param = open.param as? [String: Sendable?] {
                 attributes = param
             }
-            attributes["frameInfo"] = message.frameInfo
             
             // 获取 webView 引用
             guard let webView = message.webView else {
@@ -615,7 +620,7 @@ public class Webnat: NSObject {
             }
             
             // 创建新的 Connection 实例
-            let connection = Connection(id: from, attributes: attributes, url: webView.url) { [weak self, weak webView] messageToSend, completion in
+            let connection = Connection(id: from, attributes: attributes, url: webView.url, frameInfo: message.frameInfo) { [weak self, weak webView] messageToSend, completion in
                 guard let self, let webView = webView else {
                     completion?(NSError.closed())
                     return
@@ -624,7 +629,7 @@ public class Webnat: NSObject {
                 do {
                     // 将单条消息包成 JSON 数组字面量，供 `receive(...)` 展开为参数
                     // JSONSerialization 遇到非 JSON 值（Date、NaN、自定义类型……）会抛出 Swift 抓不到的 NSException 使进程崩溃，必须先校验
-                    let payload = [messageToSend.toDictionary()]
+                    let payload = [try messageToSend.toDictionary()]
                     guard JSONSerialization.isValidJSONObject(payload) else {
                         completion?(NSError.serializationFailed(messageToSend))
                         return
@@ -639,7 +644,15 @@ public class Webnat: NSObject {
                     self.javaScriptAliveKeeper.delay()
 
                     // 构造 JavaScript 代码调用 Web 端的 receive 方法
-                    let js = "window.__web_webnat__.receive(...\(string))"
+                    // 先解析 JSON 文本，避免 __proto__ 在 JS 对象字面量中改变原型。
+                    let literalData = try JSONSerialization.data(withJSONObject: string, options: .fragmentsAllowed)
+                    guard let literal = String(data: literalData, encoding: .utf8) else {
+                        completion?(NSError.serializationFailed(messageToSend))
+                        return
+                    }
+                    let safeLiteral = literal.replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+                        .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+                    let js = "window.__web_webnat__.receive(...JSON.parse(\(safeLiteral)))"
                                             
                     webView.evaluateJavaScript(js, completionHandler: { _, error in
                         if let error = error {
