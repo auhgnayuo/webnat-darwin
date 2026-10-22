@@ -14,19 +14,19 @@ extension Message {
 @MainActor
 final class JsonValueTests: XCTestCase {
     func testNestedNullRoundTripPreservesFieldsAndPositions() throws {
-        let payload: [String: Sendable?] = ["": "empty key", "nil": nil, "array": [1, nil, ["x": nil] as [String: Sendable?]] as [Sendable?]]
-        let json = try toJsonValue(payload)
+        let payload: [String: Sendable?] = ["": "empty key", "null": NSNull(), "array": [1, NSNull(), ["x": NSNull()] as [String: Sendable?]] as [Sendable?]]
+        let json = try XCTUnwrap(try toJsonValue(payload))
         let data = try JSONSerialization.data(withJSONObject: json)
         let decoded = try XCTUnwrap(try fromJsonValue(JSONSerialization.jsonObject(with: data)) as? [String: Sendable?])
-        XCTAssertTrue(decoded.keys.contains("nil"))
-        XCTAssertNil(decoded["nil"]!)
+        XCTAssertTrue(decoded.keys.contains("null"))
+        XCTAssertTrue(decoded["null"]! is NSNull)
         XCTAssertEqual(decoded[""] as? String, "empty key")
         let array = try XCTUnwrap(decoded["array"] as? [Sendable?])
         XCTAssertEqual(array.count, 3)
-        XCTAssertNil(array[1])
+        XCTAssertTrue(array[1] is NSNull)
         let nested = try XCTUnwrap(array[2] as? [String: Sendable?])
         XCTAssertTrue(nested.keys.contains("x"))
-        XCTAssertNil(nested["x"]!)
+        XCTAssertTrue(nested["x"]! is NSNull)
     }
 
     func testNullMessageFieldsUseTheUnknownErrorFallback() throws {
@@ -38,22 +38,28 @@ final class JsonValueTests: XCTestCase {
 
     func testUnicodeControlsAndQuotedStringsRoundTrip() throws {
         let strings = ["", "你好 😀", "\n\r\t\\\"", "\u{0}\u{2028}\u{2029}"]
-        let json = try toJsonValue(strings)
+        let json = try XCTUnwrap(try toJsonValue(strings))
         let data = try JSONSerialization.data(withJSONObject: json)
         XCTAssertEqual(try fromJsonValue(JSONSerialization.jsonObject(with: data)) as? [String], strings)
     }
 
     func testNullAndEmptyContainers() throws {
-        XCTAssertTrue(try toJsonValue(nil) is NSNull)
-        XCTAssertNil(try fromJsonValue(NSNull()))
+        XCTAssertNil(try toJsonValue(nil))
+        XCTAssertTrue(try fromJsonValue(NSNull()) is NSNull)
         XCTAssertNil(try fromJsonValue(nil))
         XCTAssertEqual((try fromJsonValue([:] as [String: Any])) as? [String: String], [:])
         XCTAssertEqual((try fromJsonValue([] as [Any])) as? [String], [])
+
+        let source: [String: Any?] = ["missing": nil, "null": NSNull(), "items": [1, nil] as [Any?]]
+        let encoded = try XCTUnwrap(try toJsonValue(source) as? [String: Any])
+        XCTAssertNil(encoded["missing"])
+        XCTAssertTrue(encoded["null"] is NSNull)
+        XCTAssertTrue((encoded["items"] as? [Any])?[1] is NSNull)
     }
 
     func testRejectsInvalidTypesAtEveryLevel() {
         struct Custom: Sendable { let value = 1 }
-        let invalid: [Any] = [Date(), Data([1]), Set([1]), Custom(), NSNull(), [1: "non-string key"]]
+        let invalid: [Any] = [Date(), Data([1]), Set([1]), Custom(), [1: "non-string key"]]
         for value in invalid {
             XCTAssertThrowsError(try toJsonValue(value))
             XCTAssertThrowsError(try toJsonValue(["nested": [value]]))
@@ -86,7 +92,7 @@ final class JsonValueTests: XCTestCase {
     }
 
     func testAllMessageBodiesConvertNullAndRejectInvalidPayloads() throws {
-        let payload: [String: Sendable?] = ["null": nil, "list": [1, nil, 3] as [Sendable?]]
+        let payload: [String: Sendable?] = ["null": NSNull(), "list": [1, nil, 3] as [Sendable?]]
         let messages = [Message.open(from: "p", param: payload), Message.close(from: "p", param: payload),
                         Message.raw(to: "p", param: payload), Message.broadcast(to: "p", name: "e", param: payload),
                         Message.invoke(to: "p", id: "i", method: "m", param: payload), Message.reply(to: "p", id: "i", result: payload),
@@ -108,7 +114,7 @@ final class JsonValueTests: XCTestCase {
     }
 
     func testNativeNullsReachRawBroadcastAndMethodListeners() throws {
-        let payload: [String: Sendable?] = ["null": nil, "array": [1, nil, 3] as [Sendable?]]
+        let payload: [String: Sendable?] = ["null": NSNull(), "array": [1, nil, 3] as [Sendable?]]
         let state = ListenerState()
         let connection = Connection(id: "p", attributes: nil, url: nil) { message, completion in
             state.sent.append(message)
@@ -141,8 +147,8 @@ final class JsonValueTests: XCTestCase {
         let dictionary = value as? [String: Sendable?]
         XCTAssertNotNil(dictionary)
         XCTAssertTrue(dictionary?.keys.contains("null") == true)
-        XCTAssertNil(dictionary?["null"]!)
-        XCTAssertNil((dictionary?["array"] as? [Sendable?])?[1])
+        XCTAssertTrue(dictionary?["null"]! is NSNull)
+        XCTAssertTrue((dictionary?["array"] as? [Sendable?])?[1] is NSNull)
     }
 
     func testEveryPayloadFieldNormalizesMissingAndExplicitNull() throws {
@@ -151,11 +157,23 @@ final class JsonValueTests: XCTestCase {
                 var fields: [String: Any] = ["id": "i", "method": "m", "name": "e"]
                 if explicitNull { fields["param"] = NSNull(); fields["result"] = NSNull(); fields["error"] = NSNull() }
                 let message = try XCTUnwrap(Message.from(dict: ["magic": Message.MAGIC, "from": "p", "to": "n", body: fields]))
-                XCTAssertNil(message.open?.param); XCTAssertNil(message.close?.param); XCTAssertNil(message.raw?.param)
-                XCTAssertNil(message.broadcast?.param); XCTAssertNil(message.invoke?.param); XCTAssertNil(message.notify?.param)
-                XCTAssertNil(message.reply?.result); XCTAssertNil(message.reply?.error)
+                let paramValues: [Sendable?] = [message.open?.param, message.close?.param, message.raw?.param,
+                    message.broadcast?.param, message.invoke?.param, message.notify?.param]
+                let replyValues: [Sendable?] = [message.reply?.result, message.reply?.error]
+                if explicitNull {
+                    XCTAssertTrue(paramValues.compactMap { $0 }.allSatisfy { $0 is NSNull })
+                    XCTAssertTrue(replyValues.compactMap { $0 }.allSatisfy { $0 is NSNull })
+                } else {
+                    XCTAssertTrue(paramValues.allSatisfy { $0 == nil })
+                    XCTAssertTrue(replyValues.allSatisfy { $0 == nil })
+                }
                 let encoded = try XCTUnwrap(try message.toDictionary()[body] as? [String: Any])
-                XCTAssertNil(encoded["param"]); XCTAssertNil(encoded["result"]); XCTAssertNil(encoded["error"])
+                if body == "reply" {
+                    XCTAssertEqual(encoded["result"] is NSNull, explicitNull)
+                    XCTAssertEqual(encoded["error"] is NSNull, explicitNull)
+                } else {
+                    XCTAssertEqual(encoded["param"] is NSNull, explicitNull)
+                }
             }
         }
     }
@@ -182,7 +200,7 @@ final class JsonValueTests: XCTestCase {
         let value = NSDictionary(dictionary: ["a": child, "b": child])
         let decoded = try XCTUnwrap(try fromJsonValue(value) as? [String: Sendable?])
         XCTAssertEqual((decoded["a"] as? [Sendable?])?.count, 2)
-        XCTAssertNil((decoded["b"] as? [Sendable?])?[1])
+        XCTAssertTrue((decoded["b"] as? [Sendable?])?[1] is NSNull)
         XCTAssertThrowsError(try toJsonValue(value))
     }
 
@@ -198,13 +216,13 @@ final class JsonValueTests: XCTestCase {
     }
 
     func testConnectionAttributesHaveOptionalValuesAndNoNativeObjects() throws {
-        let payload: [String: Sendable?] = ["null": nil, "list": [1, nil] as [Sendable?]]
+        let payload: [String: Sendable?] = ["null": NSNull(), "list": [1, nil] as [Sendable?]]
         let decoded = try XCTUnwrap(Message.from(dict: Message.open(from: "p", param: payload).toDictionary()))
         let connection = Connection(id: "p", attributes: decoded.open?.param as? [String: Sendable?], url: nil) { _, completion in completion?(nil) }
         let attributes = try XCTUnwrap(connection.attributes)
-        XCTAssertTrue(attributes.keys.contains("null")); XCTAssertNil(attributes["null"]!)
+        XCTAssertTrue(attributes.keys.contains("null")); XCTAssertTrue(attributes["null"]! is NSNull)
         XCTAssertFalse(attributes.keys.contains("frameInfo"))
-        XCTAssertTrue(JSONSerialization.isValidJSONObject(try toJsonValue(attributes)))
+        XCTAssertTrue(JSONSerialization.isValidJSONObject(try XCTUnwrap(try toJsonValue(attributes))))
     }
 
     func testExplicitNullErrorIsASuccessfulRPCReply() throws {

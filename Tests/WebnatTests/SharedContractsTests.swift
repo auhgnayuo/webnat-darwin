@@ -5,13 +5,16 @@ import XCTest
 @MainActor final class SharedContractsTests: XCTestCase {
     private func fixtures() throws -> [String: Any] {
         let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        return try JSONSerialization.jsonObject(with:Data(contentsOf:root.appendingPathComponent("contracts/v1/golden.json"))) as! [String:Any]
+        return try JSONSerialization.jsonObject(with:Data(contentsOf:root.appendingPathComponent("contracts/v2/golden.json"))) as! [String:Any]
     }
     func testGoldenErrors() throws {
         for c in try fixtures()["errors"] as! [[String:Any]] {
             let expected=c["expected"] as? [String:Any]
             let input=try fromJsonValue(c["input"])
-            if expected==nil {XCTAssertNil(input,c["id"] as! String);continue}
+            if expected==nil {
+                XCTAssertTrue(input == nil || input is NSNull, c["id"] as! String)
+                continue
+            }
             let e=NSError.from(input as Any)
             XCTAssertEqual(e.code,expected!["code"] as! Int,c["id"] as! String)
             XCTAssertEqual(e.localizedDescription,expected!["message"] as! String,c["id"] as! String)

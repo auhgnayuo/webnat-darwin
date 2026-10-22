@@ -12,8 +12,8 @@ import Foundation
 /// 仅支持 JSON 兼容数据：nil、String、Bool、有限数字、字符串键字典和数组。
 /// 嵌套空值使用 [String: Sendable?] / [Sendable?]，保留字典键和数组位置。
 /// Sendable 是并发约束，不意味着任意 Sendable 对象可序列化。
-/// 不支持 NSNull、Foundation 容器、Set、Date、自定义对象，不做 toString 兜底。
-/// JSON null 和缺失参数对外统一为 nil；Foundation 占位值仅留在编解码内部。
+/// 使用 nil 表示参数缺失，NSNull 表示显式 JSON null；数组中的 nil 编码为 NSNull。
+/// 不支持 Foundation 容器、Set、Date、自定义对象，不做 toString 兜底。
 public typealias Param = Sendable
 
 /// 连接打开消息结构体
@@ -320,7 +320,7 @@ public class Message: @unchecked Sendable {
 
     // ==================== 序列化 ====================
 
-    /// 将消息转换为字典格式（用于发送）
+    /// 将消息转换为字典格式（用于发送）；nil 字段省略，NSNull 显式保留为 JSON null。
     ///
     /// 将 `Message` 对象转换为字典格式，便于序列化为 JSON 并发送到 Web 端。
     ///
@@ -335,33 +335,25 @@ public class Message: @unchecked Sendable {
 
         if let open = open {
             var openDict: [String: Any] = [:]
-            if let param = open.param {
-                openDict["param"] = try toJsonValue(param)
-            }
+            if let param = open.param { openDict["param"] = try toJsonValue(param) ?? NSNull() }
             dict["open"] = openDict
         }
 
         if let close = close {
             var closeDict: [String: Any] = [:]
-            if let param = close.param {
-                closeDict["param"] = try toJsonValue(param)
-            }
+            if let param = close.param { closeDict["param"] = try toJsonValue(param) ?? NSNull() }
             dict["close"] = closeDict
         }
 
         if let raw = raw {
             var rawDict: [String: Any] = [:]
-            if let param = raw.param {
-                rawDict["param"] = try toJsonValue(param)
-            }
+            if let param = raw.param { rawDict["param"] = try toJsonValue(param) ?? NSNull() }
             dict["raw"] = rawDict
         }
 
         if let broadcast = broadcast {
             var broadcastDict: [String: Any] = ["name": broadcast.name]
-            if let param = broadcast.param {
-                broadcastDict["param"] = try toJsonValue(param)
-            }
+            if let param = broadcast.param { broadcastDict["param"] = try toJsonValue(param) ?? NSNull() }
             dict["broadcast"] = broadcastDict
         }
 
@@ -370,28 +362,20 @@ public class Message: @unchecked Sendable {
                 "id": invoke.id,
                 "method": invoke.method
             ]
-            if let param = invoke.param {
-                invokeDict["param"] = try toJsonValue(param)
-            }
+            if let param = invoke.param { invokeDict["param"] = try toJsonValue(param) ?? NSNull() }
             dict["invoke"] = invokeDict
         }
 
         if let reply = reply {
             var replyDict: [String: Any] = ["id": reply.id]
-            if let result = reply.result {
-                replyDict["result"] = try toJsonValue(result)
-            }
-            if let error = reply.error {
-                replyDict["error"] = try toJsonValue(error)
-            }
+            if let result = reply.result { replyDict["result"] = try toJsonValue(result) ?? NSNull() }
+            if let error = reply.error { replyDict["error"] = try toJsonValue(error) ?? NSNull() }
             dict["reply"] = replyDict
         }
 
         if let notify = notify {
             var notifyDict: [String: Any] = ["id": notify.id]
-            if let param = notify.param {
-                notifyDict["param"] = try toJsonValue(param)
-            }
+            if let param = notify.param { notifyDict["param"] = try toJsonValue(param) ?? NSNull() }
             dict["notify"] = notifyDict
         }
 

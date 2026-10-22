@@ -365,8 +365,8 @@ final class MethodWebnat {
         // 处理 reply 消息
         if let reply = message.reply {
             let id = reply.id
-            if let error = reply.error {
-                // 有错误，触发完成回调并传递错误
+            if let error = reply.error, !(error is NSNull) {
+                // 有错误，触发完成回调并传递错误；显式 JSON null 不是错误对象。
                 onCompletes[id]?(nil, NSError.from(error))
             } else {
                 // 成功，触发完成回调并传递结果

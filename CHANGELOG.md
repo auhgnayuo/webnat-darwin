@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-10-22
+
+- Use nil for missing top-level values and NSNull for explicit JSON null. Omit nil object-dictionary values; encode nil array positions as JSON null; preserve explicit NSNull. Adopt shared contract v2 while keeping released contract v1 unchanged.
+
+
 ## [2.0.0] - 2026-10-21
 
 This is a coordinated **major / breaking release** across Web, Electron, Darwin, Android and OHOS. Upgrade both sides of the bridge together; migration and manual publishing instructions are in `RELEASING.md`. Contract fixtures v1 are frozen for this release.

@@ -175,11 +175,11 @@ final class SendFailureTests: XCTestCase {
 
     func testConnectionMetadataRemainsJsonCompatibleAndFrameInfoIsSeparate() throws {
         let h = Harness()
-        let payload: [String: Sendable?] = ["null": nil, "items": [1, nil] as [Sendable?]]
+        let payload: [String: Sendable?] = ["null": NSNull(), "items": [1, nil] as [Sendable?]]
         h.web(Message.open(from: "meta", param: payload))
         let connection = try XCTUnwrap(h.webnat.connections["meta"])
         let attributes = try XCTUnwrap(connection.attributes)
-        XCTAssertTrue(attributes.keys.contains("null")); XCTAssertNil(attributes["null"]!)
+        XCTAssertTrue(attributes.keys.contains("null")); XCTAssertTrue(attributes["null"]! is NSNull)
         XCTAssertFalse(attributes.keys.contains("frameInfo")); XCTAssertTrue(connection.frameInfo != nil)
         h.webnat.raw(attributes, connection: connection)
         let sent = try XCTUnwrap(h.sent.last?["raw"] as? [String: Any])
@@ -206,7 +206,7 @@ final class SendFailureTests: XCTestCase {
         let conn = h.open()
         let param: [String: Sendable?] = [
             "int": 1, "int64": Int64(2), "uint": UInt(3), "double": 1.5, "float": Float(2.5),
-            "bool": true, "string": "x", "null": nil, "array": [1, "two", 3.0], "object": ["k": "v"],
+            "bool": true, "string": "x", "null": NSNull(), "array": [1, "two", 3.0], "object": ["k": "v"],
         ]
         h.webnat.method("m", param: param, callback: { _, _ in }, connection: conn)
         let invoke = h.sent.last?["invoke"] as? [String: Any]

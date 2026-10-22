@@ -46,7 +46,7 @@ Pin versions to a [Git tag](https://github.com/auhgnayuo/webnat-darwin/releases)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "2.0.0")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "2.0.1")
 ]
 ```
 
@@ -57,13 +57,13 @@ In Xcode: **File → Add Package Dependencies…** → enter `https://github.com
 From [CocoaPods trunk](https://cocoapods.org/pods/Webnat) (after the maintainer has pushed that version):
 
 ```ruby
-pod 'Webnat', '2.0.0'
+pod 'Webnat', '2.0.1'
 ```
 
 Or track this repository directly:
 
 ```ruby
-pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => 'v2.0.0'
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => 'v2.0.1'
 ```
 
 Track a branch:
@@ -82,33 +82,20 @@ Then `pod install`. For `:tag`, use `v` followed by `s.version` for the tag in `
 | Android (Kotlin) | [webnat-android](https://github.com/auhgnayuo/webnat-android) |
 | HarmonyOS (ArkTS) | [webnat-ohos](https://github.com/auhgnayuo/webnat-ohos) |
 
-## 2.0.0 Data Contract and Migration
+## 2.0.1 Data Contract and Migration
 
-Payloads, method results, and notifications accept only JSON-compatible values: strings, booleans,
-finite numbers, string-keyed dictionaries, arrays, and nulls, recursively. `Sendable?` is a carrier,
-not a promise that any Sendable / Codable object can be encoded.
+This 2.0.1 release distinguishes missing values from explicit JSON null. The previously published 2.0.0 contract v1 remains immutable.
 
-Use `[String: Sendable?]` / `[Sendable?]` for nullable dictionary values / array elements.
-Incoming JSON null and missing payload fields both become native nil, never NSNull.
-Null dictionary keys and array positions are preserved, as are empty string keys.
-Top-level nil payloads / results still omit their fields; nested nil encodes as JSON null.
+Payloads, method results, and notifications accept JSON-compatible strings, booleans, finite numbers,
+string-keyed dictionaries, arrays, and explicit null. Swift uses `nil` for a missing top-level value and
+`NSNull()` for explicit JSON null. In dictionaries, nil-valued entries are omitted; nil array positions
+encode as JSON null without shifting positions. Explicit `NSNull` values are preserved at every depth.
 
-Date, Data, Set, custom objects, and directly supplied NSNull / Foundation containers are rejected.
-Convert custom objects to dictionaries / arrays explicitly. Foundation / Objective-C block bridging
-is handled internally; invalid values are rejected, not stringified or silently dropped.
+`Date`, `Data`, `Set`, custom objects, non-string dictionary keys, non-finite numbers, cycles, and Foundation
+containers other than `NSNull` remain invalid. Use `NSNull()` to represent JSON null and plain Swift dictionaries
+/ arrays for payloads. Missing RPC results remain nil; an explicit JSON null result is `NSNull()`.
 
-`Message.toDictionary()` now throws: use `try`. Invalid decoded payloads cause `Message.from(dict:)`
-to reject the entire message. `Connection.attributes` is now `[String: Sendable?]?` and contains only
-JSON business data. Move access to `attributes["frameInfo"]` to the separate `connection.frameInfo` property.
-
-```swift
-let param: [String: Sendable?] = [
-    "nickname": nil,
-    "items": [1, nil, 3] as [Sendable?]
-]
-webnat.raw(param, connection: connection)
-let dictionary = try Message.raw(to: connection.id, param: param).toDictionary()
-```
+`Message.toDictionary()` throws for invalid JSON business values. Invalid decoded payloads reject the entire message.
 
 ## Usage
 
@@ -247,4 +234,4 @@ See `contracts/README.md` for versioned golden fixtures and `contracts/CI.md` fo
 
 ## Release
 
-Manual release instructions and migration notes: `RELEASING.md`. Upgrade the Web SDK and native bridge together to 2.0.0.
+Manual release instructions and migration notes: `RELEASING.md`. Upgrade the Web SDK and native bridge together to 2.0.1.

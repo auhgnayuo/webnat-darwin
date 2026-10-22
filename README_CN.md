@@ -46,7 +46,7 @@ Webnat 是用于 iOS / macOS 上 `WKWebView` 与 Native 通信的 Swift 库，�
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "2.0.0")
+    .package(url: "https://github.com/auhgnayuo/webnat-darwin.git", from: "2.0.1")
 ]
 ```
 
@@ -57,13 +57,13 @@ dependencies: [
 [CocoaPods 公有源（Trunk）](https://cocoapods.org/pods/Webnat)（在维护者已推送该版本之后）：
 
 ```ruby
-pod 'Webnat', '2.0.0'
+pod 'Webnat', '2.0.1'
 ```
 
 或直接引用本仓库：
 
 ```ruby
-pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => 'v2.0.0'
+pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :tag => 'v2.0.1'
 ```
 
 跟分支：
@@ -82,31 +82,19 @@ pod 'Webnat', :git => 'https://github.com/auhgnayuo/webnat-darwin.git', :branch 
 | Android (Kotlin) | [webnat-android](https://github.com/auhgnayuo/webnat-android) |
 | HarmonyOS (ArkTS) | [webnat-ohos](https://github.com/auhgnayuo/webnat-ohos) |
 
-## 2.0.0 数据约定与迁移
+## 2.0.1 数据约定与迁移
 
-业务参数、方法结果和通知只接受 JSON 可表达的数据：字符串、布尔值、有限数字、对象 / 字典、数组 / 列表和空值，递归遵循同一约定。类型签名只是承载这些数据，不意味着任意对象都可发送。非法数据明确失败，不通过字符串描述兜底，也不静默丢弃元素。
+2.0.1 开始区分字段缺失与显式 JSON null。已发布的 2.0.0 合同 v1 保持不变。
 
-Swift 使用 `Sendable?` 承载数据。字典 / 数组的嵌套空值使用
-`[String: Sendable?]` / `[Sendable?]`；接收 JSON null 和缺失参数统一得到 `nil`，不再得到 `NSNull`。
-字典中的空值键和数组中的空值位置都会保留，空字符串键也会保留。
-顶层参数 / 结果为 nil 时仍省略字段，嵌套 nil 编码为 JSON null。
+参数、方法结果和通知接受 JSON 兼容的字符串、布尔值、有限数字、字符串键字典、数组和显式空值。
+Swift 中 `nil` 表示顶层字段缺失，`NSNull()` 表示显式 JSON null。字典中的 nil 值会省略；数组中的 nil
+位置会编码为 JSON null，不改变数组长度。显式 `NSNull` 在各层级均保留。
 
-不接受 `Date`、`Data`、`Set`、自定义对象或直接传入的 `NSNull` / Foundation 容器；
-`Codable` / `Sendable` 并不代表对象自动符合 JSON 约定，请显式转换成字典和数组。
-框架在 Foundation / Objective-C block 边界处理自动桥接，业务数据使用上述 Swift 类型。
+`Date`、`Data`、`Set`、自定义对象、非字符串字典键、非有限数字、循环引用及除 `NSNull` 外的 Foundation
+容器仍然非法。请使用 `NSNull()` 表示 JSON null，并用普通 Swift 字典 / 数组承载数据。缺失的 RPC 结果仍为 nil；
+显式 JSON null 结果为 `NSNull()`。
 
-`Message.toDictionary()` 现在会抛出序列化错误，调用时使用 `try`；`Message.from(dict:)` 遇到非法业务值拒绝整个消息。
-`Connection.attributes` 改为 `[String: Sendable?]?`，只包含 JSON 业务数据；
-原先的 `attributes["frameInfo"]` 移至独立的 `connection.frameInfo` 属性。
-
-```swift
-let param: [String: Sendable?] = [
-    "nickname": nil,
-    "items": [1, nil, 3] as [Sendable?]
-]
-webnat.raw(param, connection: connection)
-let dictionary = try Message.raw(to: connection.id, param: param).toDictionary()
-```
+`Message.toDictionary()` 对非法业务数据抛错；非法接收数据会拒绝整条消息。
 
 ## 基本使用
 
@@ -245,4 +233,4 @@ func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
 
 ## 发布
 
-本次统一为 2.0.0 / v2.0.0。请同步升级 Web SDK 与 Native 桥；手动发布命令与迁移说明见 `RELEASING.md`。
+本次统一为 2.0.1 / v2.0.1。请同步升级 Web SDK 与 Native 桥；手动发布命令与迁移说明见 `RELEASING.md`。

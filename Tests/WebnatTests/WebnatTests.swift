@@ -1124,7 +1124,7 @@ final class MessageDecodeTests: XCTestCase {
         XCTAssertEqual(CFGetTypeID(try XCTUnwrap(parsed["true"] as? NSNumber)), CFBooleanGetTypeID())
         XCTAssertEqual(CFGetTypeID(try XCTUnwrap(parsed["false"] as? NSNumber)), CFBooleanGetTypeID())
         XCTAssertTrue(parsed.keys.contains("null"))
-        XCTAssertNil(parsed["null"]!)
+        XCTAssertTrue(parsed["null"]! is NSNull)
         let roundTrip = try XCTUnwrap(Message.from(dict: envelope)?.dictionaryForTest()["invoke"] as? [String: Any])
         let encoded = try JSONSerialization.data(withJSONObject: roundTrip["param"] as Any)
         let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
@@ -1136,7 +1136,7 @@ final class MessageDecodeTests: XCTestCase {
         XCTAssertEqual(CFGetTypeID(array[3]), CFBooleanGetTypeID())
     }
 
-    func testDecodeNSNullAtTopLevelBecomesNil() {
+    func testDecodeNSNullAtTopLevelPreservesNull() {
         let dict: [String: Any] = [
             "magic": Message.MAGIC,
             "from": "x",
@@ -1145,10 +1145,10 @@ final class MessageDecodeTests: XCTestCase {
         ]
         let m = Message.from(dict: dict)
         XCTAssertNotNil(m?.broadcast)
-        XCTAssertNil(m?.broadcast?.param)
+        XCTAssertTrue(m?.broadcast?.param is NSNull)
     }
 
-    func testDecodeArrayContainingNSNullPreservesNilPosition() {
+    func testDecodeArrayContainingNSNullPreservesNullPosition() {
         let dict: [String: Any] = [
             "magic": Message.MAGIC,
             "from": "x",
@@ -1158,7 +1158,7 @@ final class MessageDecodeTests: XCTestCase {
         let m = Message.from(dict: dict)
         let arr = m?.broadcast?.param as? [Sendable?]
         XCTAssertEqual(arr?.count, 3)
-        XCTAssertNil(arr?[1])
+        XCTAssertTrue(arr?[1] is NSNull)
     }
 
     func testDecodeArrayRejectsUnknownTypeWithoutDroppingElements() {

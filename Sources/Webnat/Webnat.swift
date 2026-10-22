@@ -16,7 +16,7 @@ import WebKit
 /// ## JSON 数据约定
 ///
 /// 参数、结果和通知遵循 Param 的 JSON 数据约定；Sendable? 不代表任意对象可编码。
-/// JSON null / 缺失参数对外为 nil；嵌套空值使用 [String: Sendable?] / [Sendable?]，保留键和位置。
+/// 缺失参数用 nil 表示，显式 JSON null 用 NSNull 表示；字典 nil 值省略，数组 nil 位置保留为 JSON null。
 /// 非法发送数据报 SERIALIZATION_FAILED；原始消息 / 广播等无完成回调的发送保持原有静默失败语义。
 ///
 /// ## 使用示例
